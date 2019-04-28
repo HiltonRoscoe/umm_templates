@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet xmlns:cdf="NIST_V0_cast_vote_records.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array fn map math xhtml xs err" version="3.0">
+	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
+  <xsl:import-schema namespace="NIST_V0_cast_vote_records.xsd" schema-location="NIST_V0_cast_vote_records.xsd" />
+  <xsl:template match="*|/">
+		<!-- do nothing -->
+	</xsl:template>
+	<xsl:template match="/" name="xsl:initial-template">
+	<xsl:apply-templates />
+	</xsl:template>
+  <% require 'active_support/inflector'
+%>
+<% xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
+  @outer_module = @locals[:outer_module] || 'OuterModule'
+  object_id_attr = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_attribute_name'}.value
+  id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
+  plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
+  version = @locals[:version]
+  version ||= 'v' + @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}.applied_tags.find{|t| t.name == 'major_version'}.value rescue nil
+  raise "You must specify a version for the domain model" unless version
+
+  def get_property_name(property, singular_id_suffix, plural_id_suffix, pluralize_roles = false, underscore = false)
+  	name = property.name
+    name ||= property.type.name
+    name = name.underscore if underscore
+    if property.association? && !(property.attribute? || property.composite?)
+      id_suffix = property.multiple? ? plural_id_suffix : singular_id_suffix
+      name = name + id_suffix 
+    else
+      name = name.pluralize if property.multiple? && pluralize_roles 
+    end
+    name 
+  end
+
+  def get_default_value(property)
+    if property.multiple?
+      ", :default => []"
+    end
+  end
+
+  def get_property_type(property)
+    time_types = [UmlMetamodel::PRIMITIVES[:datetime], UmlMetamodel::PRIMITIVES[:date], UmlMetamodel::PRIMITIVES[:time]]
+    is_time_type = property.type.primitive? && time_types.include?(property.type.base_primitive)
+    if is_time_type
+      "#{property.type.base_primitive.name.downcase}"
+    # elsif property.multiple?
+    #  "array"
+    elsif !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute?) && !(property.composite?))) # This may not cover all necessary cases
+      "map"
+    elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:integer]].include?(property.type.base_primitive)
+      "number"
+    else
+      "string"
+    end
+  end
+%>
+
+<% @all_packages.each do |package| %>
+<% fully_qualified_package_name = @outer_module + '.' + package.qualified_name%>
+<% package.classes.sort_by{|c|c.name}.each do |klass| %>
+  <xsl:template name="cdf:<%= klass.name %>" match="element(*, cdf:<%= klass.name %>)">
+  <map>
+<% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? }%>
+<% end %>
+<% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
+<% next unless property.is_navigable %>
+<xsl:if test="boolean(cdf:<%= get_property_name(property, id_suffix, plural_id_suffix)%>)">
+        <% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
+    <% calculated_data_type = property.multiple? ? 'array' : get_property_type(property) %>
+        <<%= calculated_data_type %> key="<%= get_property_name(property, id_suffix, plural_id_suffix)%>">    
+        <% if get_property_type(property) == 'map' %>
+        <xsl:apply-templates select="cdf:<%= get_property_name(property, id_suffix, plural_id_suffix)%>" />
+        <% elsif klass_has_simple_content || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
+        <xsl:value-of select="@<%= get_property_name(property, id_suffix, plural_id_suffix)%>" />
+        <% else %>
+        <xsl:value-of select="cdf:<%= get_property_name(property, id_suffix, plural_id_suffix)%>" />
+        <% end %>
+     </<%= calculated_data_type%>>
+</xsl:if>
+<% end %>
+  <string key="@type"><%= package.qualified_name %>.<%= klass.name %></string>
+  </map>
+  <%# Call parent class' template %>
+  <%if klass.parents.any?%>
+    <xsl:call-template name="cdf:<%=klass.parents.first.name%>" />
+  <% end %>
+  </xsl:template>
+<% end %>
+<% end %>
+</xsl:stylesheet>
