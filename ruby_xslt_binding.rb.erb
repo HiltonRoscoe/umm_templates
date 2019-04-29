@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V0_cast_vote_records.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array fn map math xhtml xs err" version="3.0">
+<xsl:stylesheet  xmlns="http://www.w3.org/2005/xpath-functions" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V0_cast_vote_records.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:import-schema namespace="NIST_V0_cast_vote_records.xsd" schema-location="NIST_V0_cast_vote_records.xsd" />
   <xsl:template match="*|/">
@@ -41,13 +41,7 @@
   end
 
   def get_property_type(property)
-    time_types = [UmlMetamodel::PRIMITIVES[:datetime], UmlMetamodel::PRIMITIVES[:date], UmlMetamodel::PRIMITIVES[:time]]
-    is_time_type = property.type.primitive? && time_types.include?(property.type.base_primitive)
-    if is_time_type
-      "#{property.type.base_primitive.name.downcase}"
-    # elsif property.multiple?
-    #  "array"
-    elsif !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute?) && !(property.composite?))) # This may not cover all necessary cases
+    if !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute?) && !(property.composite?))) # This may not cover all necessary cases
       "map"
     elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:integer]].include?(property.type.base_primitive)
       "number"
@@ -62,7 +56,8 @@
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
-  <xsl:template name="cdf:<%= klass.name %>" match="element(*, cdf:<%= klass.name %>)<%if klass.children.any?%>[not(@xsi:type)]<%end%>">
+  <xsl:template name="cdf:<%= klass.name %>" match="element(*, cdf:<%= klass.name %>)"<%if klass.children.any?%> priority="-1"<%end%>>
+    <xsl:param name="set_type" select="false()" />
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? }%>
 <% end %>
   <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
@@ -71,8 +66,14 @@
 <% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
 <% next unless property.is_navigable %>
 <% property_name = get_property_name(property, id_suffix, plural_id_suffix) %>
-<xsl:if test="boolean(cdf:<%= property_name %>)">
-    <% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
+<% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
+<% is_xml_attribute = (klass_has_simple_content &&  !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
+<%# determine if we need to output the property %>
+<% if is_xml_attribute %>
+  <xsl:if test="boolean(@<%= property_name %>)">
+<% else %>
+  <xsl:if test="boolean(cdf:<%= property_name %>)">
+<% end %>
     <%# if it is an array, then we need to apply special logic %>
     <% calculated_data_type = property.multiple? ? 'array' : get_property_type(property) %>
         <%# output calculated data type, could be a array %>        
@@ -84,7 +85,7 @@
               <map>
                 <xsl:apply-templates select="." />
               </map>
-            <% elsif klass_has_simple_content || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
+            <% elsif is_xml_attribute %>
               <<%= get_property_type(property) %>>    
                 <xsl:value-of select="." />
               </<%= get_property_type(property) %>>    
@@ -96,10 +97,8 @@
           </xsl:for-each>
         <%else%>
           <% if get_property_type(property) == 'map' %>
-            <map>
               <xsl:apply-templates select="cdf:<%= property_name %>" />
-            </map>
-          <% elsif klass_has_simple_content || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
+          <% elsif is_xml_attribute %>
             <xsl:value-of select="@<%= property_name %>" />
           <% else %>
             <xsl:value-of select="cdf:<%= property_name %>" />
@@ -108,10 +107,14 @@
      </<%= calculated_data_type%>>
 </xsl:if>
 <% end %>
-  <string key="@type"><%= package.qualified_name %>.<%= klass.name %></string>
+  <xsl:if test="not($set_type)">
+    <string key="@type"><%= package.qualified_name %>.<%= klass.name %></string>
+  </xsl:if>
   <%# Call parent class' template %>
   <%if klass.parents.any?%>
-    <xsl:call-template name="cdf:<%=klass.parents.first.name%>" />
+    <xsl:call-template name="cdf:<%=klass.parents.first.name%>">
+      <xsl:with-param name="set_type" select="true()" />
+    </xsl:call-template>
   <% end %>
   </xsl:template>
 <% end %>
