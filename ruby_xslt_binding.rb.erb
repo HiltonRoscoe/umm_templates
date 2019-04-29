@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet  xmlns="http://www.w3.org/2005/xpath-functions" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V0_cast_vote_records.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
+<xsl:stylesheet  xmlns="http://www.w3.org/2005/xpath-functions" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V2_election_results_reporting.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
-  <xsl:import-schema namespace="NIST_V0_cast_vote_records.xsd" schema-location="NIST_V0_cast_vote_records.xsd" />
-  <xsl:template match="*|/">
+  <xsl:import-schema namespace="NIST_V2_election_results_reporting.xsd" schema-location="NIST_V2_election_results_reporting.xsd" />
+  <xsl:template match="*|/" priority="-9">
 		<!-- do nothing -->
 	</xsl:template>
 	<xsl:template match="/" name="xsl:initial-template">
@@ -43,8 +43,10 @@
   def get_property_type(property)
     if !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute?) && !(property.composite?))) # This may not cover all necessary cases
       "map"
-    elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:integer]].include?(property.type.base_primitive)
+    elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:integer],UmlMetamodel::PRIMITIVES[:float], UmlMetamodel::PRIMITIVES[:double]].include?(property.type.base_primitive)
       "number"
+    elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:boolean]].include?(property.type.base_primitive)
+      "boolean"
     else
       "string"
     end
@@ -71,6 +73,9 @@
 <%# determine if we need to output the property %>
 <% if is_xml_attribute %>
   <xsl:if test="boolean(@<%= property_name %>)">
+<% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } %>
+  <string key="Content"><xsl:value-of select="." /></string>
+<% next %>
 <% else %>
   <xsl:if test="boolean(cdf:<%= property_name %>)">
 <% end %>
