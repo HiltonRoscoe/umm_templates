@@ -1,0 +1,174 @@
+require 'roxml'
+<%
+require 'active_support/inflector'
+xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
+outer_module = @locals[:outer_module] || 'OuterModule'
+object_id_attr = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_attribute_name'}.value
+id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
+plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
+ 
+# Get a property name for either XML or Ruby
+def get_property_name(property, singular_id_suffix, plural_id_suffix, klass_has_simple_content, pluralize_roles = false, underscore = false, roxml_from_handling = true)
+  name = property.name
+  name ||= property.type.name
+  name = name.underscore if underscore
+  # Handle non-composition associations
+  if property.association? && !(property.attribute? || property.composite?)
+    id_suffix = property.multiple? ? plural_id_suffix : singular_id_suffix
+    name = name + id_suffix
+  # Handle composition associations
+  # elsif !(property.type.primitive? || property.type.enumeration? || property.type.name == 'RichText') && property.is_navigable && (property.attribute? || property.composite?)
+  else
+    name = name.pluralize if property.multiple? && pluralize_roles
+  end
+  if roxml_from_handling
+    name = case
+    when property.applied_stereotypes.any?{|s| s.name == 'simpleContent'}
+      ':content'
+    when klass_has_simple_content || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'}
+      "'@#{name}'"
+    else
+      "'#{name}'"
+    end
+  end
+  name
+end
+
+# Get the :as => ... portion of an xml_attr declaration
+def get_roxml_as(property, outer_module)
+  # Handle non-composition associations (string of IDs)
+  # Also handle enumerations and RichTexts (both are strings)
+  if (property.association? && !(property.attribute? || property.composite?)) || (property.type.enumeration? || property.type.name == 'RichText')
+    roxml_type = ''
+  # Handle composition associations to non-primitives
+  else
+    roxml_type = if property.type.primitive?
+      case property.type.base_primitive
+      when UmlMetamodel::PRIMITIVES[:string], UmlMetamodel::PRIMITIVES[:uri]
+        ''
+      # Currently parsing datetime, date and time as strings due to difficulties with Ruby time primitives.
+      when UmlMetamodel::PRIMITIVES[:datetime], UmlMetamodel::PRIMITIVES[:date], UmlMetamodel::PRIMITIVES[:time]
+        ''
+      when UmlMetamodel::PRIMITIVES[:boolean]
+        ':bool'
+      else
+        property.type.base_primitive.name
+      end
+    else
+      outer_module + '::' + property.type.qualified_name
+    end
+    if property.owner.name == 'Person' && property.name == "MiddleName"
+      # puts "Is middle : #{property.multiple?.inspect}"
+    end
+    roxml_type = "[#{roxml_type}]" if property.multiple?
+    roxml_type
+  end
+  roxml_type.empty? ? '' : ", :as => #{roxml_type}"
+end
+
+# Get the :to_xml and block parameter portion of an xml_attr declaration
+def get_to_from_xml_blocks(property)
+  # Add blocks to parse strings of ids into and from arrays of IDs
+  if property.association? && !(property.attribute? || property.composite?) && property.multiple?
+    ", :to_xml => proc{|v| v.empty? ? nil : v.join(' ')}) {|v| v.to_s.split(/\s+/).uniq }"
+  elsif property.multiple? && !property.type.primitive?
+    ", :to_xml => proc{|v| (v && v.empty?) ? nil : v})"
+  elsif property.type.primitive? && property.type.base_primitive == UmlMetamodel::PRIMITIVES[:datetime]
+    ", :to_xml => proc{|v| v.strftime('%Y-%m-%dT%H:%M:%S%:z') if v}) {|v| parse_datetime(v)}"
+  else
+    ')'
+  end
+end
+
+# Sort properties alphanumerically with the following exceptions:
+#  - Other<attribute> elements appear following <attribute>
+#  - End<attribute> elements appear following Start<attribute>
+#  - <attribute>End elements appear following <attribute>Start
+def sort_properties(properties, singular_id_suffix, plural_id_suffix, klass_has_simple_content)
+  paired_attrs = []
+  sorted_properties = properties.sort_by{|p| get_property_name(p, singular_id_suffix, plural_id_suffix, klass_has_simple_content)}
+  sorted_properties.each{|n|
+    name = n.name
+    other_attr = sorted_properties.find{|a| a.name == "Other#{name}"}
+    paired_attrs << [n, other_attr] if other_attr
+    if name =~ /^Start(.*)/i
+      end_attr = sorted_properties.find{|a| a.name == "End#{$1}"}
+      paired_attrs << [n, end_attr] if end_attr
+    end
+    if name =~ /^(.*)Start/i
+      end_attr = sorted_properties.find{|a| a.name == "#{$1}End"}
+      paired_attrs << [n, end_attr] if end_attr
+    end
+  }
+  # Now reorder paired_attrs
+  paired_attrs.each do |a, paired_attr|
+    sorted_properties.delete(paired_attr)
+    new_index = sorted_properties.index(a) + 1
+    sorted_properties.insert(new_index, paired_attr)
+  end
+  sorted_properties
+end 
+%>
+
+
+module <%= outer_module %>
+
+end
+
+<% classes_by_inheritance = begin
+  # Sort by inheritance. 
+  # This is a rather ugly sort, pushing classes that needed to be reshuffled to the very end of the list
+  # It could be improved by reordering child classes directly following the parent class in all cases
+  all_classes_by_name = @all_classifiers.sort_by{|c|c.name}
+  unsorted_classes = all_classes_by_name.dup
+  sorted_classes = []
+  while unsorted_classes.any?
+    num_unsorted = unsorted_classes.count
+    unsorted_classes.dup.each do |klass|
+      # Add klass to sorted list unless one of its parents is one of the classes to be sorted and has not been sorted yet
+      sorted_classes << unsorted_classes.delete(klass) unless (klass.all_parents & all_classes_by_name & unsorted_classes).any?
+    end
+    raise "Unable to sort classes by inheritance!" unless unsorted_classes.count < num_unsorted
+  end
+  sorted_classes
+end
+%>
+classes = [<%= sorted_classes.select{|c|c.class?}.collect{|c| outer_module + '::' + c.qualified_name}.join(', ') %>]
+classes.each {|c| 
+  c.include ROXML
+}
+
+def parse_datetime(time_string)
+  valid_xml_date_without_timezone = (time_string =~ /^\d{4}-(0?[1-9]|1[012])-(0?[1-9]|[12][0-9]|3[01])T(([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]|(24:00:00))$/)
+  valid_xml_date_with_timezone = (time_string =~ /^\d{4}-(0?[1-9]|1[012])-(0?[1-9]|[12][0-9]|3[01])T(([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]|(24:00:00))(Z|[+-]((0[0-9]|1[0-3]):[0-5][0-9]|14:00))$/)
+  if valid_xml_date_without_timezone
+    default_timezone = $default_timezone || 'UTC'
+    puts "Warning: timestamp #{time_string} does not include timezone information. Assuming '#{default_timezone}'."
+    Time.parse("#{time_string} #{default_timezone}")
+  elsif valid_xml_date_with_timezone
+    Time.parse(time_string)
+  else
+    raise "Invalid dateTime detected: #{time_string}"
+  end
+end
+
+<% @all_packages.each do |package| %>
+module <%= outer_module + '::' %><%= package.qualified_name %>
+
+<% package.classes.sort_by{|c|c.name}.each do |klass| %>
+<% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
+  class <%= klass.name %><%= (' < ' + outer_module + '::' + klass.parents.first.qualified_name) if klass.parents.any? %>
+
+    xml_name('<%= klass.name %>')
+<% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? }%>
+    xml_attr('id', :from => '@<%= object_id_attr %>')
+<% end %>
+<% sort_properties(klass.properties, id_suffix, plural_id_suffix, klass_has_simple_content).each do |property| %>
+<% next unless property.is_navigable %>
+    xml_attr('<%= get_property_name(property, '_id', '_ids', klass_has_simple_content, true, true, false)%>'<%= get_roxml_as(property, outer_module) %>, :from => <%= get_property_name(property, id_suffix, plural_id_suffix, klass_has_simple_content) %><%= get_to_from_xml_blocks(property) %>
+
+<% end # properties each loop %>
+  end
+<% end # classes each loop %>
+end
+<% end # package each loop %>
