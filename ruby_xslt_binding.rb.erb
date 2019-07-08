@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet  xmlns="http://www.w3.org/2005/xpath-functions" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V2_election_results_reporting.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
-	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
+<xsl:stylesheet  xmlns="http://www.w3.org/2005/xpath-functions" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V0_cast_vote_records.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
+	<xsl:output method="text" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:import-schema namespace="NIST_V0_cast_vote_records.xsd" schema-location="NIST_V0_cast_vote_records.xsd" />
   <xsl:template match="*|/" priority="-9">
 		<!-- do nothing -->
 	</xsl:template>
 	<xsl:template match="/" name="xsl:initial-template">
-	<map>
-  <xsl:apply-templates />
-  </map>
+  <xsl:variable name="json">
+    <map>
+    <xsl:apply-templates />
+    </map>
+  </xsl:variable>
+  <xsl:value-of select="xml-to-json($json)" />
 	</xsl:template>
   <% require 'active_support/inflector'
 %>
@@ -74,17 +77,23 @@
 <% if is_xml_attribute %>
   <xsl:if test="boolean(@<%= property_name %>)">
 <% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } %>
-  <string key="Content"><xsl:value-of select="." /></string>
+  <string key="Data"><xsl:value-of select="." /></string>
 <% next %>
 <% else %>
   <xsl:if test="boolean(cdf:<%= property_name %>)">
 <% end %>
     <%# if it is an array, then we need to apply special logic %>
     <% calculated_data_type = property.multiple? ? 'array' : get_property_type(property) %>
+    <% is_idrefs = !property.composite? && property.association? %>
         <%# output calculated data type, could be a array %>        
         <<%= calculated_data_type %> key="<%= property_name %>">    
         <% if property.multiple? %>
-          <xsl:for-each select="cdf:<%=property_name%>">
+          <% if is_idrefs %>
+          <%# handle the use of IDREFS, which must map to arrays %>
+            <xsl:for-each select="tokenize(cdf:<%=property_name%>)">
+          <% else %>
+            <xsl:for-each select="cdf:<%=property_name%>">
+          <% end %>
             <% if get_property_type(property) == 'map' %>
               <%# use anonynomous map %>
               <map>
