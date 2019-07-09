@@ -31,6 +31,7 @@ def get_property_name(property, singular_id_suffix, plural_id_suffix, klass_has_
       "'#{name}'"
     end
   end
+  puts(name)
   name
 end
 
@@ -60,8 +61,9 @@ def get_roxml_as(property, outer_module)
     if property.owner.name == 'Person' && property.name == "MiddleName"
       # puts "Is middle : #{property.multiple?.inspect}"
     end
-    roxml_type = "[#{roxml_type}]" if property.multiple?
-    roxml_type
+  end
+  if (property.attribute? || property.composite?) && property.multiple?
+    roxml_type = "[#{roxml_type}]"
   end
   roxml_type.empty? ? '' : ", :as => #{roxml_type}"
 end
@@ -71,7 +73,7 @@ def get_to_from_xml_blocks(property)
   # Add blocks to parse strings of ids into and from arrays of IDs
   if property.association? && !(property.attribute? || property.composite?) && property.multiple?
     ", :to_xml => proc{|v| v.empty? ? nil : v.join(' ')}) {|v| v.to_s.split(/\s+/).uniq }"
-  elsif property.multiple? && !property.type.primitive?
+  elsif property.multiple? && !property.type.primitive? && !property.type.enumeration?
     ", :to_xml => proc{|v| (v && v.empty?) ? nil : v})"
   elsif property.type.primitive? && property.type.base_primitive == UmlMetamodel::PRIMITIVES[:datetime]
     ", :to_xml => proc{|v| v.strftime('%Y-%m-%dT%H:%M:%S%:z') if v}) {|v| parse_datetime(v)}"
@@ -86,7 +88,7 @@ end
 #  - <attribute>End elements appear following <attribute>Start
 def sort_properties(properties, singular_id_suffix, plural_id_suffix, klass_has_simple_content)
   paired_attrs = []
-  sorted_properties = properties.sort_by{|p| get_property_name(p, singular_id_suffix, plural_id_suffix, klass_has_simple_content)}
+  sorted_properties = properties.sort_by{|p| get_property_name(p, singular_id_suffix, plural_id_suffix, klass_has_simple_content).downcase}
   sorted_properties.each{|n|
     name = n.name
     other_attr = sorted_properties.find{|a| a.name == "Other#{name}"}
@@ -106,6 +108,7 @@ def sort_properties(properties, singular_id_suffix, plural_id_suffix, klass_has_
     new_index = sorted_properties.index(a) + 1
     sorted_properties.insert(new_index, paired_attr)
   end
+  puts("end prop")
   sorted_properties
 end 
 %>
