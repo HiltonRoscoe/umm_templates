@@ -63,7 +63,7 @@
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? }%>
 <% end %>
   <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
-    <string key="@id"><xsl:value-of select="@ObjectId" /></string>
+    <xsl:attribute name="ObjectId"><xsl:value-of select="string[@key = '@id']" /></xsl:attribute>
   <% end %>
   <%# Call parent class' template %>
   <%if klass.parents.any?%>
@@ -71,7 +71,7 @@
       <xsl:with-param name="set_type" select="true()" />
     </xsl:call-template>
   <% end %>
-<% klass.properties.each do |property| %>
+<% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
 <% next unless property.is_navigable %>
 <% property_name = get_property_name(property, id_suffix, plural_id_suffix) %>
 <% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
@@ -80,7 +80,7 @@
 <% if is_xml_attribute %>
   <xsl:if test="boolean(@<%= property_name %>)">
 <% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } %>
-  <string key="Data"><xsl:value-of select="." /></string>
+    <xsl:value-of select="." />
 <% next %>
 <% else %>
   <xsl:if test="boolean(*[@key = '<%= property_name %>'])">
@@ -91,9 +91,9 @@
         <% if property.multiple? %>
           <% if is_idrefs %>
           <%# handle the use of IDREFS, which must map to arrays %>
-            <!--<xsl:for-each select="tokenize(cdf:<%=property_name%>)">-->
-            <xsl:for-each select="*[@key = '<%= property_name %>']/map">
+            <xsl:for-each select="*[@key = '<%=property_name%>']/string">            
           <% else %>
+          <%# Problematic structure, b/c further down will repeat tag for each %>
             <xsl:for-each select="*[@key = '<%= property_name %>']/map">
           <% end %>
             <% if get_property_type(property) == 'map' %>
