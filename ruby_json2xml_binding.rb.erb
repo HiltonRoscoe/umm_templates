@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet  xmlns="http://www.w3.org/2005/xpath-functions" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V2_election_results_reporting.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
+<xsl:stylesheet  xmlns="NIST_V2_election_results_reporting.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V2_election_results_reporting.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:import-schema namespace="NIST_V2_election_results_reporting.xsd" schema-location="NIST_V2_election_results_reporting.xsd" />
 	<xsl:template match="root" priority="1">
 		<xsl:variable name="xml">
-      <ElectionResults>
+      <ElectionReport>
 			  <xsl:apply-templates select="json-to-xml(.)"/>
-      </ElectionResults>
+      </ElectionReport>
 		</xsl:variable>
 		<xsl:copy-of select="$xml"/>
 	</xsl:template>
@@ -65,7 +65,13 @@
   <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
     <string key="@id"><xsl:value-of select="@ObjectId" /></string>
   <% end %>
-<% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
+  <%# Call parent class' template %>
+  <%if klass.parents.any?%>
+    <xsl:call-template name="cdf:<%=klass.parents.first.name%>">
+      <xsl:with-param name="set_type" select="true()" />
+    </xsl:call-template>
+  <% end %>
+<% klass.properties.each do |property| %>
 <% next unless property.is_navigable %>
 <% property_name = get_property_name(property, id_suffix, plural_id_suffix) %>
 <% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
@@ -118,14 +124,6 @@
         <% end %>
 </xsl:if>
 <% end %>
-  <xsl:if test="not($set_type)">    
-  </xsl:if>
-  <%# Call parent class' template %>
-  <%if klass.parents.any?%>
-    <xsl:call-template name="cdf:<%=klass.parents.first.name%>">
-      <xsl:with-param name="set_type" select="true()" />
-    </xsl:call-template>
-  <% end %>
   </xsl:template>
 <% end %>
 <% end %>
