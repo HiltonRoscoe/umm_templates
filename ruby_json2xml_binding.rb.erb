@@ -34,12 +34,6 @@
     name 
   end
 
-  def get_default_value(property)
-    if property.multiple?
-      ", :default => []"
-    end
-  end
-
   def get_property_type(property)
     if !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute?) && !(property.composite?))) # This may not cover all necessary cases
       "map"
@@ -67,6 +61,8 @@
   <% end %>
   <%# Call parent class' template %>
   <%if klass.parents.any?%>
+    <%# Must have a xsi:type, so add now %>
+    <xsl:attribute name="xsi:type"><%= klass.name %></xsl:attribute>
     <xsl:call-template name="cdf:<%=klass.parents.first.name%>">
       <xsl:with-param name="set_type" select="true()" />
     </xsl:call-template>
@@ -78,7 +74,7 @@
 <% is_xml_attribute = (klass_has_simple_content &&  !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
 <%# determine if we need to output the property %>
 <% if is_xml_attribute %>
-  <xsl:if test="boolean(@<%= property_name %>)">
+    <xsl:if test="boolean(*[@key = '<%= property_name %>'])">  
 <% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } %>
     <xsl:value-of select="." />
 <% next %>
@@ -96,31 +92,33 @@
           <%# Problematic structure, b/c further down will repeat tag for each %>
             <xsl:for-each select="*[@key = '<%= property_name %>']/map">
           <% end %>
-            <% if get_property_type(property) == 'map' %>
-              <%# use anonynomous map %>
-              <<%= property_name %>>
-                <xsl:apply-templates select="." />
-              </<%= property_name %>>
-            <% elsif is_xml_attribute %>
-              <<%= get_property_type(property) %>>    
-                <xsl:value-of select="." />
-              </<%= get_property_type(property) %>>    
-            <% else %>
-              <<%= property_name %>>    
-                <xsl:value-of select="*[@key = '<%= property_name %>']"/>
-              </<%= property_name %>>    
-            <% end %>                        
-          </xsl:for-each>
-        <%else%>
-        <<%= property_name %>>
           <% if get_property_type(property) == 'map' %>
-            <xsl:apply-templates select="cdf:<%= property_name %>" />
-          <% elsif is_xml_attribute %>
-            <xsl:value-of select="@<%= property_name %>" />
+            <%# use anonynomous map %>
+            <<%= property_name %>>
+              <xsl:apply-templates select="." />
+            </<%= property_name %>>
+          <% elsif is_xml_attribute %>         
+              <xsl:value-of select="." />         
           <% else %>
-            <xsl:value-of select="*[@key = '<%= property_name %>']"/>
+            <<%= property_name %>>    
+              <xsl:value-of select="*[@key = '<%= property_name %>']"/>
+            </<%= property_name %>>    
+          <% end %>                        
+          </xsl:for-each>
+        <%# Single %>
+        <%else%>
+        <%# Add extra conditional, because we only need tags for non-XML attributes %>
+        <% if is_xml_attribute %>
+            <xsl:attribute name="<%= property_name %>"><xsl:value-of select="@<%= property_name %>" /></xsl:attribute>
+        <%else%>
+          <<%= property_name %>>
+            <% if get_property_type(property) == 'map' %>
+              <xsl:apply-templates select="*[@key = '<%= property_name %>']" />
+            <% else %>
+              <xsl:value-of select="*[@key = '<%= property_name %>']"/>
+            <% end %>
+          </<%= property_name %>>
           <% end %>
-        </<%= property_name %>>
         <% end %>
 </xsl:if>
 <% end %>
