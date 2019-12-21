@@ -45,6 +45,17 @@
       "string"
     end
   end
+
+  def f_sort(klass, property)
+    klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} 
+    is_xml_attribute = (klass_has_simple_content &&  !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} 
+    if is_xml_attribute
+      '0'
+    else
+      (property.name || property.type.name).underscore
+    end
+  end
+
 %>
 
 <% @all_packages.each do |package| %>
@@ -67,7 +78,7 @@
       <xsl:with-param name="set_type" select="true()" />
     </xsl:call-template>
   <% end %>
-<% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
+<% klass.properties.sort_by{|p|f_sort(klass,p)}.each do |property| %>
 <% next unless property.is_navigable %>
 <% property_name = get_property_name(property, id_suffix, plural_id_suffix) %>
 <% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
@@ -76,7 +87,7 @@
 <% if is_xml_attribute %>
     <xsl:if test="boolean(*[@key = '<%= property_name %>'])">  
 <% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } %>
-    <xsl:value-of select="." />
+    <xsl:value-of select="*[@key = '<%= property_name %>']" />
 <% next %>
 <% else %>
   <xsl:if test="boolean(*[@key = '<%= property_name %>'])">
@@ -109,7 +120,7 @@
         <%else%>
         <%# Add extra conditional, because we only need tags for non-XML attributes %>
         <% if is_xml_attribute %>
-            <xsl:attribute name="<%= property_name %>"><xsl:value-of select="@<%= property_name %>" /></xsl:attribute>
+            <xsl:attribute name="<%= property_name %>"><xsl:value-of select="*[@key = '<%= property_name %>']" /></xsl:attribute>
         <%else%>
           <<%= property_name %>>
             <% if get_property_type(property) == 'map' %>
