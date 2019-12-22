@@ -46,39 +46,45 @@
     end
   end
 
-  def f_sort(klass, property)
+  def get_sortable_prop_name(klass, property)
     klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} 
     is_xml_attribute = (klass_has_simple_content &&  !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} 
+    standardized_property = (property.name || property.type.name).underscore    
     if is_xml_attribute
-      '0'
+      ' ' + standardized_property #use low ASCII table character to sort ahead of everything else
+    # for items supposed to appear together, make them sort after their ancestor by adding a space
+    elsif standardized_property == 'other_type'
+      'type '
+    elsif standardized_property == 'end_time'
+      'start_time '
+    elsif standardized_property == 'end_date'
+      'start_date '
     else
-      (property.name || property.type.name).underscore
+      standardized_property
     end
   end
 
 %>
 
 <% @all_packages.each do |package| %>
-<% fully_qualified_package_name = @outer_module + '.' + package.qualified_name%>
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
   <xsl:template name="cdf:<%= klass.name %>" match="*[string/@key = '@type' and string = 'ElectionResults.<%= klass.name %>']"<%if klass.children.any?%> priority="-1" <%end%> xpath-default-namespace="http://www.w3.org/2005/xpath-functions">
     <xsl:param name="set_type" select="false()" />
-<% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? }%>
-<% end %>
-  <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
+<% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
     <xsl:attribute name="ObjectId"><xsl:value-of select="string[@key = '@id']" /></xsl:attribute>
-  <% end %>
+<% end %>
+<%if klass.parents.any?%>
   <%# Call parent class' template %>
-  <%if klass.parents.any?%>
-    <%# Must have a xsi:type, so add now %>
+  <%# Must have a xsi:type, so add now %>
     <xsl:attribute name="xsi:type"><%= klass.name %></xsl:attribute>
     <xsl:call-template name="cdf:<%=klass.parents.first.name%>">
       <xsl:with-param name="set_type" select="true()" />
     </xsl:call-template>
-  <% end %>
-<% klass.properties.sort_by{|p|f_sort(klass,p)}.each do |property| %>
+<% end %>
+<%# Begin UML property enumeration %>
+<% klass.properties.sort_by{|p|get_sortable_prop_name(klass,p)}.each do |property| %>
 <% next unless property.is_navigable %>
 <% property_name = get_property_name(property, id_suffix, plural_id_suffix) %>
 <% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
@@ -98,9 +104,9 @@
         <% if property.multiple? %>
           <% if is_idrefs %>
           <%# handle the use of IDREFS, which must map to arrays %>
-            <xsl:for-each select="*[@key = '<%=property_name%>']/string">            
+            <<%= property_name %>>
+              <xsl:for-each select="*[@key = '<%=property_name%>']/string">            
           <% else %>
-          <%# Problematic structure, b/c further down will repeat tag for each %>
             <xsl:for-each select="*[@key = '<%= property_name %>']/map">
           <% end %>
           <% if get_property_type(property) == 'map' %>
@@ -110,12 +116,18 @@
             </<%= property_name %>>
           <% elsif is_xml_attribute %>         
               <xsl:value-of select="." />         
+          <% elsif is_idrefs %>         
+              <xsl:value-of select="."/>
           <% else %>
             <<%= property_name %>>    
               <xsl:value-of select="*[@key = '<%= property_name %>']"/>
             </<%= property_name %>>    
           <% end %>                        
           </xsl:for-each>
+          <%# handle closure of idrefs (one for all array items)%>
+          <% if is_idrefs %>
+            </<%= property_name %>>    
+          <% end %>
         <%# Single %>
         <%else%>
         <%# Add extra conditional, because we only need tags for non-XML attributes %>
