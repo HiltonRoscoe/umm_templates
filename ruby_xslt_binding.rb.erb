@@ -77,7 +77,7 @@
 <% if is_xml_attribute %>
   <xsl:if test="boolean(@<%= property_name %>)">
 <% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } %>
-  <string key="Data"><xsl:value-of select="." /></string>
+  <string key="Content"><xsl:value-of select="." /></string>
 <% next %>
 <% else %>
   <xsl:if test="boolean(cdf:<%= property_name %>)">
