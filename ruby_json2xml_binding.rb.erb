@@ -2,7 +2,8 @@
 <xsl:stylesheet  xmlns="NIST_V2_election_results_reporting.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V2_election_results_reporting.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:import-schema namespace="NIST_V2_election_results_reporting.xsd" schema-location="NIST_V2_election_results_reporting.xsd" />
-	<xsl:template match="root" priority="1">
+	<!-- the root node must be XML, meaning the JSON must be nested in XML (not ideal) -->
+  <xsl:template match="root" priority="1">
 		<xsl:variable name="xml">
       <ElectionReport>
 			  <xsl:apply-templates select="json-to-xml(.)"/>
@@ -71,7 +72,6 @@
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
   <xsl:template name="cdf:<%= klass.name %>" match="*[string/@key = '@type' and string = 'ElectionResults.<%= klass.name %>']"<%if klass.children.any?%> priority="-1" <%end%> xpath-default-namespace="http://www.w3.org/2005/xpath-functions">
-    <xsl:param name="set_type" select="false()" />
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
     <xsl:attribute name="ObjectId"><xsl:value-of select="string[@key = '@id']" /></xsl:attribute>
 <% end %>
@@ -79,9 +79,7 @@
   <%# Call parent class' template %>
   <%# Must have a xsi:type, so add now %>
     <xsl:attribute name="xsi:type"><%= klass.name %></xsl:attribute>
-    <xsl:call-template name="cdf:<%=klass.parents.first.name%>">
-      <xsl:with-param name="set_type" select="true()" />
-    </xsl:call-template>
+    <xsl:call-template name="cdf:<%=klass.parents.first.name%>" />
 <% end %>
 <%# Begin UML property enumeration %>
 <% klass.properties.sort_by{|p|get_sortable_prop_name(klass,p)}.each do |property| %>
