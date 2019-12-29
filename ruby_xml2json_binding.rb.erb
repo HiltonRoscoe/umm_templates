@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet  xmlns="http://www.w3.org/2005/xpath-functions" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="NIST_V0_cast_vote_records.xsd" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
+<xsl:stylesheet  xmlns="http://www.w3.org/2005/xpath-functions" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs xsi" version="3.0">
 	<xsl:output method="text" version="1.0" encoding="UTF-8" indent="yes"/>
-  <xsl:import-schema namespace="NIST_V0_cast_vote_records.xsd" schema-location="NIST_V0_cast_vote_records.xsd" />
+  <xsl:import-schema namespace="<%= @locals[:target_schema] %>" schema-location="<%= @locals[:target_schema] %>" />
   <xsl:template match="*|/" priority="-9">
 		<!-- do nothing -->
 	</xsl:template>
@@ -90,7 +90,10 @@
         <% if property.multiple? %>
           <% if is_idrefs %>
           <%# handle the use of IDREFS, which must map to arrays %>
-            <xsl:for-each select="tokenize(cdf:<%=property_name%>)">
+          <%# fn:data is a schema aware function, but we must use it as
+          fn:tokenize throws an error with multiple IDs 
+          https://stackoverflow.com/questions/39881920/xquery-multivalued-fields-idrefs %>
+            <xsl:for-each select="data(cdf:<%=property_name%>)">
           <% else %>
             <xsl:for-each select="cdf:<%=property_name%>">
           <% end %>
