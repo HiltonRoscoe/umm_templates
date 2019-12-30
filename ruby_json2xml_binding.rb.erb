@@ -14,13 +14,19 @@
 %>
 <% xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
   @outer_module = @locals[:outer_module] || 'OuterModule'
-  object_id_attr = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_attribute_name'}.value
   id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
   plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
   version = @locals[:version]
   version ||= 'v' + @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}.applied_tags.find{|t| t.name == 'major_version'}.value rescue nil
   raise "You must specify a version for the domain model" unless version
-
+  # Gets the standardized name for a given property. The standardized name should match what was generated
+  # during XSD or JSON Schema generation
+  # Params:
+  # +property+:: The UMM property
+  # +singular_id_suffix:: The suffix used for singular Identifier references
+  # +plural_id_suffix:: The suffix used for plural Identifier references
+  # +pluralize_roles:: Whether role names should be pluralized
+  # +underscore:: Whether CamelCase should be converted to under_score
   def get_property_name(property, singular_id_suffix, plural_id_suffix, pluralize_roles = false, underscore = false)
   	name = property.name
     name ||= property.type.name
@@ -34,6 +40,9 @@
     name 
   end
 
+  # Gets the JSON type given a property.
+  # Params:
+  # +property+:: The UMM property
   def get_property_type(property)
     if !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute?) && !(property.composite?))) # This may not cover all necessary cases
       "map"
@@ -45,7 +54,11 @@
       "string"
     end
   end
-
+  # Determines the order that properties should appear in the output. XSD uses 
+  # sequences and elements must appear in a certain order
+  # Params:
+  # +klass+:: The UMM Class
+  # +property+:: The UMM property
   def get_sortable_prop_name(klass, property)
     klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} 
     is_xml_attribute = (klass_has_simple_content &&  !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} 
@@ -76,10 +89,12 @@
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
-  <xsl:template name="cdf:<%= klass.name %>" match="*[string = 'ElectionResults.<%= klass.name %>' and string/@key = '@type']"<%if klass.children.any?%> priority="-1" <%end%>>
+  <xsl:template name="cdf:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']"<%if klass.children.any?%> priority="-1" <%end%>>
     <xsl:param name="set_type" select="true()" />
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
-    <xsl:attribute name="ObjectId"><xsl:value-of select="string[@key = '@id']" /></xsl:attribute>
+    <xsl:attribute name="ObjectId">
+      <xsl:value-of select="string[@key = '@id']" />
+    </xsl:attribute>
 <% end %>
 <%if klass.parents.any?%>
   <%# Call parent class' template %>
@@ -87,7 +102,7 @@
     <xsl:if test="$set_type">
       <xsl:attribute name="xsi:type"><%= klass.name %></xsl:attribute>
     </xsl:if>
-    <xsl:call-template name="cdf:<%=klass.parents.first.name%>" >       
+    <xsl:call-template name="cdf:<%=klass.parents.first.name%>">       
       <xsl:with-param name="set_type" select="false()" />
     </xsl:call-template>
 <% end %>
@@ -114,9 +129,10 @@
           <% if is_idrefs %>
           <%# handle the use of IDREFS, which must map to arrays %>
             <<%= property_name %>>
-              <xsl:for-each select="*[@key = '<%=property_name%>']/string">            
+              <xsl:variable name="idrefs">
+              <xsl:for-each select="*[@key = '<%=property_name%>']/string">
           <% else %>
-            <xsl:for-each select="*[@key = '<%= property_name %>']/<%=get_property_type(property)%>">
+              <xsl:for-each select="*[@key = '<%= property_name %>']/<%=get_property_type(property)%>"> 
           <% end %>
           <% if get_property_type(property) == 'map' %>
             <%# use anonynomous map %>
@@ -124,7 +140,7 @@
               <xsl:apply-templates select="." />
             </<%= property_name %>>
           <% elsif is_xml_attribute || is_idrefs %>         
-              <xsl:value-of select="." />         
+              <xsl:value-of select="concat(' ', .)" />         
           <% elsif property.type.primitive? %>
             <<%= property_name %>>    
               <xsl:value-of select="."/>
@@ -137,13 +153,17 @@
           </xsl:for-each>
           <%# handle closure of idrefs (one for all array items)%>
           <% if is_idrefs %>
-            </<%= property_name %>>    
+            </xsl:variable>
+            <xsl:value-of select="normalize-space($idrefs)" />
+            </<%= property_name %>>
           <% end %>
         <%# Single %>
         <%else%>
         <%# Add extra conditional, because we only need tags for non-XML attributes %>
         <% if is_xml_attribute %>
-            <xsl:attribute name="<%= property_name %>"><xsl:value-of select="*[@key = '<%= property_name %>']" /></xsl:attribute>
+            <xsl:attribute name="<%= property_name %>">
+              <xsl:value-of select="*[@key = '<%= property_name %>']" />
+            </xsl:attribute>
         <%else%>
           <<%= property_name %>>
             <% if get_property_type(property) == 'map' %>
