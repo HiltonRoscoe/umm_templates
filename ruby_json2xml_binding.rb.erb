@@ -1,15 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet   xpath-default-namespace="http://www.w3.org/2005/xpath-functions" xmlns="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs" version="3.0">
-	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
-  	<!-- the root node must be XML, meaning the JSON must be nested in XML (not ideal) -->
-  <xsl:template match="root" priority="1">
-		<xsl:variable name="xml">
-      <ElectionReport>
-			  <xsl:apply-templates select="json-to-xml(.)"/>
-      </ElectionReport>
-		</xsl:variable>
-		<xsl:copy-of select="$xml"/>
-	</xsl:template>
   <% require 'active_support/inflector'
 %>
 <% xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
@@ -78,6 +67,10 @@
       'sequence_start '
     elsif standardized_property == 'is_test'
       'issuer_abbreviation '
+    elsif standardized_property == 'other_status'
+      'status '
+    elsif standardized_property == 'other_report_type'
+      'report_type '
     else
       standardized_property
     end
@@ -85,7 +78,20 @@
 
 %>
 
-<% @all_packages.each do |package| %>
+<% @all_packages.each do |package| 
+   root_class = package.classes.select{|klass| klass.applied_stereotypes.any?{|s| s.name == 'Root'}}[0].name
+%>
+<xsl:stylesheet   xpath-default-namespace="http://www.w3.org/2005/xpath-functions" xmlns="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs" version="3.0">
+	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
+  	<!-- the root node must be XML, meaning the JSON must be nested in XML (not ideal) -->
+  <xsl:template match="root" priority="1">
+		<xsl:variable name="xml">
+      <<%= root_class %>>
+			  <xsl:apply-templates select="json-to-xml(.)"/>
+      </<%= root_class %>>
+		</xsl:variable>
+		<xsl:copy-of select="$xml"/>
+	</xsl:template>
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
@@ -141,7 +147,7 @@
             </<%= property_name %>>
           <% elsif is_xml_attribute || is_idrefs %>         
               <xsl:value-of select="concat(' ', .)" />         
-          <% elsif property.type.primitive? %>
+          <% elsif property.type.primitive? || property.type.enumeration? %>
             <<%= property_name %>>    
               <xsl:value-of select="."/>
             </<%= property_name %>>    
