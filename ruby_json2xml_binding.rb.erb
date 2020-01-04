@@ -51,26 +51,26 @@
   def get_sortable_prop_name(klass, property)
     klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} 
     is_xml_attribute = (klass_has_simple_content &&  !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} 
-    standardized_property = (property.name || property.type.name).underscore    
+    standardized_property = (property.name || property.type.name).downcase 
     if is_xml_attribute
       ' ' + standardized_property #use low ASCII table character to sort ahead of everything else
     # for items supposed to appear together, make them sort after their ancestor by adding a space
-    elsif standardized_property == 'other_type'
+    elsif standardized_property == 'othertype'
       'type '
-    elsif standardized_property == 'end_time'
-      'start_time '
-    elsif standardized_property == 'end_date'
-      'start_date '
-    elsif standardized_property == 'other_vote_variation'
-      'vote_variation '
-    elsif standardized_property == 'sequence_end'
-      'sequence_start '
-    elsif standardized_property == 'is_test'
-      'issuer_abbreviation '
-    elsif standardized_property == 'other_status'
+    elsif standardized_property == 'endtime'
+      'starttime '
+    elsif standardized_property == 'enddate'
+      'startdate '
+    elsif standardized_property == 'othervotevariation'
+      'votevariation '
+    elsif standardized_property == 'sequenceend'
+      'sequencestart '
+    elsif standardized_property == 'istest'
+      'issuerabbreviation '
+    elsif standardized_property == 'otherstatus'
       'status '
-    elsif standardized_property == 'other_report_type'
-      'report_type '
+    elsif standardized_property == 'otherreporttype'
+      'reporttype '
     else
       standardized_property
     end
