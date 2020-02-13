@@ -1,0 +1,169 @@
+design = model.getDesign();
+<% require 'active_support/inflector'
+%>
+<% xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
+  @outer_module = @locals[:outer_module] || 'OuterModule'
+  object_id_attr = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_attribute_name'}.value
+  id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
+  plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
+  version = @locals[:version]
+  version ||= 'v' + @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}.applied_tags.find{|t| t.name == 'major_version'}.value rescue nil
+  raise "You must specify a version for the domain model" unless version
+
+  def get_property_name(property, singular_id_suffix, plural_id_suffix, pluralize_roles = false, underscore = false)
+  	name = property.name
+    name ||= property.type.name
+    name = name.underscore if underscore
+    if property.association? && !(property.attribute? || property.composite?)
+      id_suffix = property.multiple? ? plural_id_suffix : singular_id_suffix
+      name = name + id_suffix 
+    else
+      name = name.pluralize if property.multiple? && pluralize_roles 
+    end
+    name 
+  end
+
+  def get_default_value(property)
+    if property.multiple?
+      ", :default => []"
+    end
+  end
+
+  def get_property_type2(property)
+    time_types = [UmlMetamodel::PRIMITIVES[:datetime], UmlMetamodel::PRIMITIVES[:date], UmlMetamodel::PRIMITIVES[:time]]
+    is_time_type = property.type.primitive? && time_types.include?(property.type.base_primitive)
+    if is_time_type
+      ", :type => :#{property.type.base_primitive.name.downcase}"
+    elsif !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute? || property.composite?))) # This may not cover all necessary cases
+      ", :type => '#{@outer_module}::#{property.type.qualified_name}'"
+    end
+  end
+
+  def get_property_type(property)
+    if !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute?) && !(property.composite?))) # This may not cover all necessary cases
+      "ERR"
+    elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:integer],UmlMetamodel::PRIMITIVES[:float], UmlMetamodel::PRIMITIVES[:double]].include?(property.type.base_primitive)
+      "NUMERIC"
+    elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:boolean]].include?(property.type.base_primitive)
+      "Boolean"
+    else
+      "String"
+    end
+  end
+%>
+// module <%= @outer_module %>
+
+<% @all_packages.each do |package| %>
+<% fully_qualified_package_name = @outer_module + '::' + package.qualified_name%>
+// package <%= package.name.split('::').join('.') %>
+
+// module <%= fully_qualified_package_name %>
+
+<% package.enumerations.sort_by{|c|c.name}.each do |enumeration| %>
+
+domain = design.createDomain();
+domain.name = "<%= enumeration.name %>";
+ce = domain.createConstraintEnumeration();
+<% enumeration.all_literals.each do |literal| %>
+ce.add("<%= literal.name %>","");
+<% end %>
+domain.setValueList(ce);
+type = model.getDesign().getLogicalDatatypeSet().getLogTypeByName("String");
+domain.setLogicalDatatype(type);
+domain.setDataTypeSize(50);
+<% end %>
+
+<% package.classes.sort_by{|c|c.name}.each do |klass| %>
+entity = model.createEntity();
+entity.setName("<%= klass.name %>");
+// <%= (' < ' + @outer_module + '::' + klass.parents.first.qualified_name) if klass.parents.any? %>
+
+<% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? }%>
+//    json_attr :id, :as => '@id'
+<% end %>
+<% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
+<% next unless property.is_navigable && !property.association? %>
+<% next unless !property.multiple? %>
+attribute = entity.createAttribute();
+attribute.setName("<%= get_property_name(property, id_suffix, plural_id_suffix)%>")
+// DETERMINE DATA TYPE
+<% if property.type.enumeration? %>
+domains = design.getDomainSet();
+domain = domains.getByName("<%= property.type.name%>");
+attribute.setDomain(domain);
+<% elsif property.type.primitive? %>
+// primitive type 
+type = model.getDesign().getLogicalDatatypeSet().getLogTypeByName("<%= get_property_type(property) %>");
+attribute.setLogicalDatatype(type);
+attribute.setDomain(null);
+<% end %>
+<%if property.lower == 1 %>
+attribute.setNullsAllowed(false);
+<% end %>
+<% end %>
+<% package.associations.sort_by{|c|c.name}.each do |assoc| %>
+<% end %>
+<% end %>
+// DO SECOND PASS OF ENTITIES
+<% package.classes.sort_by{|c|c.name}.each do |klass| %>
+<%# do SUPERTPES %>
+<% if klass.parents.any? %>
+source = model.getEntitySet().getByName("<%=klass.name%>");
+target = model.getEntitySet().getByName("<%= klass.parents.first.name %>");
+source.setHierarchicalParent(target);
+<% end %>
+<%# Build associations %>
+<% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
+<% next unless property.is_navigable %>
+<%# maybe we do this to only get one side? (no dups)%>
+<% next unless property.multiple? %>
+<%# <% next unless property.aggregation == :none %>
+  <%# handle primitives
+    CREATE NEW ENTITY WITH ASSOCIATION TO PARENT, will only contain a VALUE column of that specified
+    type
+   %>
+<% if property.type.primitive? || property.type.enumeration? %>
+entity = model.createEntity();
+targetName = "<%= klass.name %><%= property.name %>";
+entity.setName(targetName);
+<%# refactor! %>
+attribute = entity.createAttribute();
+attribute.setName("<%= get_property_name(property, id_suffix, plural_id_suffix)%>")
+// DETERMINE DATA TYPE
+  <% if property.type.enumeration? %>
+  domains = design.getDomainSet();
+  domain = domains.getByName("<%= property.type.name%>");
+  attribute.setDomain(domain);
+  <% elsif property.type.primitive? %>
+  // primitive type 
+  type = model.getDesign().getLogicalDatatypeSet().getLogTypeByName("<%= get_property_type(property) %>");
+  attribute.setLogicalDatatype(type);
+  attribute.setDomain(null);
+  <% end %>
+<% else %>
+targetName = "<%= property.type.name %>";
+<% end %>
+  <%# do relation wiring %>
+  source = model.getEntitySet().getByName("<%=klass.name %>");
+  target = model.getEntitySet().getByName(targetName);
+  relation = model.createRelation();
+  relation.setSourceEntity(source);
+  relation.setTargetEntity(target);
+  relation.setSourceCardinalityString("1");
+  relation.setTargetCardinalityString("*");
+  <% if property.lower >= 1 %>
+  relation.setOptionalSource(false);
+  <% else %>
+  relation.setOptionalSource(true);
+  <% end %>
+  <% if property.aggregation == :composite %>
+  relation.setOptionalTarget(false);
+  <% else %>
+  relation.setOptionalTarget(true);
+  <% end %>
+
+<% end %>
+<%# Build attributes with multiple cardinality 
+Will require recursive logic %>
+<% end %>
+<% end %>
