@@ -116,7 +116,7 @@ source.setHierarchicalParent(target);
 <% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
 <% next unless property.is_navigable %>
 <%# maybe we do this to only get one side? (no dups)%>
-<% next unless property.multiple? %>
+<% next unless property.multiple? || property.association? %>
 <%# <% next unless property.aggregation == :none %>
   <%# handle primitives
     CREATE NEW ENTITY WITH ASSOCIATION TO PARENT, will only contain a VALUE column of that specified
@@ -126,6 +126,10 @@ source.setHierarchicalParent(target);
 entity = model.createEntity();
 targetName = "<%= klass.name %><%= property.name %>";
 entity.setName(targetName);
+<%# use different color for minor entities %>
+entity.setUseDefaultColor(false);
+entity.setBackgroundColor(java.awt.Color.getHSBColor(0,0,0.90));
+
 <%# refactor! %>
 attribute = entity.createAttribute();
 attribute.setName("<%= get_property_name(property, id_suffix, plural_id_suffix)%>")
@@ -160,6 +164,10 @@ targetName = "<%= property.type.name %>";
   relation.setOptionalTarget(false);
   <% else %>
   relation.setOptionalTarget(true);
+  <% end %>
+  <% if ((property.name != property.type.name) && !(property.type.enumeration? || property.type.primitive?)) %>
+  relation.setNameOnTarget("<%= property.name %>");
+  relation.setName("<%= property.name %>");
   <% end %>
 
 <% end %>
