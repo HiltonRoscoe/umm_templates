@@ -81,7 +81,14 @@ domain.setDataTypeSize(50);
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
 entity = model.createEntity();
 entity.setName("<%= klass.name %>");
-entity.setCommentInRDBMS(<%= klass.documentation.dump %>);
+// color for regular entity
+entity.setUseDefaultColor(false);
+entity.setBackgroundColor(java.awt.Color.getHSBColor(199/360,0.35,0.90));
+
+<% if klass.is_abstract %>
+entity.setCompleteSubtypes(true);
+<% end %>
+<%# entity.setCommentInRDBMS( klass.documentation.dump %>
 // create attributes under entity
 <% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
 <%# don't pull associations, they must be handled seperately %>
@@ -89,8 +96,9 @@ entity.setCommentInRDBMS(<%= klass.documentation.dump %>);
 <%# don't pull properties with multiplicity > 1, they violate 1NF, will be handled
 down the road as associations %>
 <% next unless !property.multiple? %>
+<% next unless property.type.primitive? || property.type.enumeration? %>
 attribute = entity.createAttribute();
-attribute.setCommentInRDBMS(<%= property.documentation.dump %>);
+
 attribute.setName("<%= get_property_name(property, id_suffix, plural_id_suffix)%>")
 <%# DETERMINE DATA TYPE %>
   <% if property.type.enumeration? %>
@@ -121,15 +129,15 @@ attribute.setName("<%= get_property_name(property, id_suffix, plural_id_suffix)%
 <% klass.properties.sort_by{|p|(p.name || p.type.name).underscore}.each do |property| %>
 <% next unless property.is_navigable %>
 <%# maybe we do this to only get one side? (no dups)%>
-<% next unless property.multiple? || property.association? %>
+<% next unless property.multiple? || property.association? || (!property.type.enumeration? && !property.type.primitive?)  %>
   <%# handle primitives
     CREATE NEW ENTITY WITH ASSOCIATION TO PARENT, will only contain a VALUE column of that specified
     type
    %>
 <% if property.type.primitive? || property.type.enumeration? %>
 entity = model.createEntity();
-targetName = "<%= klass.name %><%= property.name %>";
-entity.setName(targetName);
+sourceName = "<%= klass.name %><%= property.name %>";
+entity.setName(sourceName);
 <%# use different color for minor entities %>
 entity.setUseDefaultColor(false);
 entity.setBackgroundColor(java.awt.Color.getHSBColor(0,0,0.90));
@@ -149,35 +157,60 @@ attribute.setName("<%= get_property_name(property, id_suffix, plural_id_suffix)%
   attribute.setDomain(null);
   <% end %>
 <% else %>
-targetName = "<%= property.type.name %>";
+sourceName = "<%= property.type.name %>";
 <% end %>
+ 
   <%# do relation wiring %>
-  source = model.getEntitySet().getByName("<%=klass.name %>");
-  target = model.getEntitySet().getByName(targetName);
+  target = model.getEntitySet().getByName("<%=klass.name %>");
+  source = model.getEntitySet().getByName(sourceName);
   relation = model.createRelation();
   relation.setSourceEntity(source);
   relation.setTargetEntity(target);
-  relation.setSourceCardinalityString("1");
-  
-  relation.setTargetCardinalityString("*");
-  <% if property.lower >= 1 %>
-    relation.setOptionalSource(false);
+<% if property.association? %> 
+  <% if property.upper > 1  %>
+  relation.setSourceCardinalityString("*");
   <% else %>
-    relation.setOptionalSource(true);
+  relation.setSourceCardinalityString("1");
+  <% end %>
+  <% if property.opposite.upper > 1 || property.aggregation == :none %>
+  relation.setTargetCardinalityString("*");
+  <% else %>
+  relation.setTargetCardinalityString("1");
+  <% end %>
+<% elsif property.type.primitive? || property.type.enumeration? %>
+relation.setSourceCardinalityString("*");
+relation.setTargetCardinalityString("1");
+<% else %>
+relation.setSourceCardinalityString("*");
+relation.setTargetCardinalityString("*");
+<% end %>
+  
+  <% if property.lower >= 1 %>
+    relation.setOptionalTarget(false);
+  <% else %>
+    relation.setOptionalTarget(true);
   <% end %>
   <%# Is it is composite, then the target must have an identifying relationship with parent
   i.e. it cannot exist without it's parent. Some of this relationships in UML are strictly for
   wiring, while others have semantic meaning %>
   <% if property.aggregation == :composite %>
-    relation.setOptionalTarget(false);
+    relation.setOptionalSource(false);
+  <% elsif (property.type.primitive? || property.type.enumeration?) && property.multiple? %>
+    relation.setOptionalSource(false);
   <% else %>
-    relation.setOptionalTarget(true);
+    relation.setOptionalSource(true);
   <% end %>
   <% if ((property.name != property.type.name) && !(property.type.enumeration? || property.type.primitive?)) %>
   relation.setNameOnTarget("<%= property.name %>");
   <% end %>
-  relation.setName("<%= property.name %>");
-
+  <%# this is the name the mapping tables will get %>
+  relation.setName("<%=klass.name %>_<%= property.type.name %>");
+  <% if property.upper > 1 %>
+    relation.setProperty("fkRole", "<%= klass.name %>");
+  <% else %>
+    // will not work for 1<->1 relations with no dominate role
+    relation.setProperty("fkRole", "<%= property.name %>");
+  <% end %>
 <% end %>
 <% end %>
 <% end %>
