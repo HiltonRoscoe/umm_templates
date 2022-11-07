@@ -17,7 +17,7 @@
 %>
 <% xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
   @outer_module = @locals[:outer_module] || 'OuterModule'
-  object_id_attr = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_attribute_name'}.value
+  #object_id_attr = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_attribute_name'}.value
   id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
   plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
   version = @locals[:version]
@@ -75,12 +75,12 @@
 <% is_xml_attribute = (klass_has_simple_content &&  !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
 <%# determine if we need to output the property %>
 <% if is_xml_attribute %>
-  <xsl:if test="boolean(@<%= property_name %>)">
+  <xsl:where-populated>
 <% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } %>
   <string key="<%= property_name %>"><xsl:value-of select="." /></string>
 <% next %>
 <% else %>
-  <xsl:if test="boolean(cdf:<%= property_name %>)">
+  <xsl:where-populated>
 <% end %>
     <%# if it is an array, then we need to apply special logic %>
     <% calculated_data_type = property.multiple? ? 'array' : get_property_type(property) %>
@@ -122,7 +122,7 @@
           <% end %>
         <% end %>
      </<%= calculated_data_type%>>
-</xsl:if>
+</xsl:where-populated>
 <% end %>
   <xsl:if test="not($set_type)">
     <string key="@type"><%= package.qualified_name %>.<%= klass.name %></string>
