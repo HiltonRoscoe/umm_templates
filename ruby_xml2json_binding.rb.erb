@@ -61,7 +61,24 @@
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
-  <xsl:template name="cdf:<%= klass.name %>" match="element(*, cdf:<%= klass.name %>)"<%if klass.children.any?%> priority="-1"<%end%>>
+<%# determines class hierarchy depth %>
+<% getDepth = -> (klasses, highest) {
+    curHigh = highest;    
+    klasses.each {
+      |x|
+      lastHigh = 0
+      if x.children.any?
+         lastHigh = getDepth.call(x.children, highest + 1)
+      end      
+      if (lastHigh > curHigh )        
+        curHigh = lastHigh
+      end            
+    }
+    return curHigh
+}
+       
+    %>
+  <xsl:template name="cdf:<%= klass.name %>" match="element(*, cdf:<%= klass.name %>)"<%if klass.children.any?%> priority="<%=getDepth.call(klass.children,1)*-1 %>"<%end%>>
     <xsl:param name="set_type" select="false()" />
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? }%>
 <% end %>
