@@ -85,7 +85,7 @@
 <% @all_packages.each do |package| 
    root_class = package.classes.select{|klass| klass.applied_stereotypes.any?{|s| s.name == 'Root'}}[0].name
 %>
-<xsl:stylesheet xpath-default-namespace="http://www.w3.org/2005/xpath-functions" xmlns="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:math="http://www.w3.org/2005/xpath-functions/math" xmlns:array="http://www.w3.org/2005/xpath-functions/array" xmlns:map="http://www.w3.org/2005/xpath-functions/map" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:err="http://www.w3.org/2005/xqt-errors" exclude-result-prefixes="array cdf fn map math xhtml err xs" version="3.0">
+<xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions" xmlns="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" exclude-result-prefixes="cdf" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   	<!-- the root node must be XML, meaning the JSON must be nested in XML (not ideal) -->
   <xsl:template name="start" match=".[. instance of map(*)]" priority="1">
@@ -97,9 +97,24 @@
 		<xsl:copy-of select="$xml"/>
 	</xsl:template>
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
+<% getDepth = -> (klasses, highest) {
+    curHigh = highest;    
+    klasses.each {
+      |x|
+      lastHigh = 0
+      if x.children.any?
+         lastHigh = getDepth.call(x.children, highest + 1)
+      end      
+      if (lastHigh > curHigh )        
+        curHigh = lastHigh
+      end            
+    }
+    return curHigh
+}
+%>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
-  <xsl:template name="cdf:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']"<%if klass.children.any?%> priority="-1" <%end%>>
+  <xsl:template name="cdf:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']""<%if klass.children.any?%> priority="<%=getDepth.call(klass.children,1)*-1 %>" <%end%>>
     <xsl:param name="set_type" select="true()" />
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
     <xsl:attribute name="ObjectId">
