@@ -10,8 +10,8 @@
     <map>
     <xsl:apply-templates />
     </map>
-  </xsl:variable>
-  <xsl:value-of select="xml-to-json($json)" />
+  </xsl:variable>  
+  <xsl:value-of select="xml-to-json($json, map{'number-formatter':function($n){$n}})" />
 	</xsl:template>
   <% require 'active_support/inflector'
 %>
