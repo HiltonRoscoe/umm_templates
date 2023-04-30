@@ -87,7 +87,6 @@
 %>
 <xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions" xmlns="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" exclude-result-prefixes="cdf" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
-  	<!-- the root node must be XML, meaning the JSON must be nested in XML (not ideal) -->
   <xsl:template name="start" match=".[. instance of map(*)]" priority="1">
 		<xsl:variable name="xml">
       <<%= root_class %>>
@@ -114,7 +113,7 @@
 %>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
-  <xsl:template name="cdf:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']""<%if klass.children.any?%> priority="<%=getDepth.call(klass.children,1)*-1 %>" <%end%>>
+  <xsl:template name="cdf:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']"<%if klass.children.any?%> priority="<%=getDepth.call(klass.children,1)*-1 %>" <%end%>>
     <xsl:param name="set_type" select="true()" />
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
     <xsl:attribute name="ObjectId">
