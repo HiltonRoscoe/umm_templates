@@ -83,7 +83,7 @@
 %>
 
 <% @all_packages.each do |package| 
-   root_class = package.classes.select{|klass| klass.applied_stereotypes.any?{|s| s.name == 'Root'}}[0].name
+   root_class = "VoterRecordsRequest"
 %>
 <xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions" xmlns="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" exclude-result-prefixes="cdf" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
@@ -135,12 +135,14 @@
 <%# Avoid properties (associations) from other direction %>
 <% next unless property.is_navigable %>
 <% property_name = get_property_name(property, id_suffix, plural_id_suffix) %>
+<%# need to hijack this code to handle FGDC spec stuff. Basically need to say there IS simple content, and anything not called Value should get it%>
 <% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
-<% is_xml_attribute = (klass_has_simple_content && !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
+<% klass_has_simple_target = klass.properties.any?{|p| p.name == 'Value'} %>
+<% is_xml_attribute =  (klass_has_simple_target && property.name != 'Value') || (klass_has_simple_content && !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
 <%# determine if we need to output the property %>
 <% if is_xml_attribute %>
     <xsl:if test="boolean(*[@key = '<%= property_name %>'])">  
-<% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } %>
+<% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } || property.name == 'Value'  %>
     <xsl:value-of select="*[@key = '<%= property_name %>']" />
 <% next %>
 <% else %>
