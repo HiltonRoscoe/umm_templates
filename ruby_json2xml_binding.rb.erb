@@ -82,16 +82,16 @@
 
 %>
 
-<% @all_packages.each do |package| 
+<% @all_packages.each do |package|  
    root_class = "VoterRecordsRequest"
 %>
 <xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions" xmlns="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" exclude-result-prefixes="cdf" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:template name="start" match=".[. instance of map(*)]" priority="1">
 		<xsl:variable name="xml">
-      <<%= root_class %>>
+      <<%=package.name %>:<%= root_class %>>
 			  		<xsl:apply-templates select=". => serialize(map { 'method' : 'json' }) => json-to-xml()"/>
-      </<%= root_class %>>
+      </<%=package.name %>:<%= root_class %>>
 		</xsl:variable>
 		<xsl:copy-of select="$xml"/>
 	</xsl:template>
@@ -113,7 +113,7 @@
 %>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
-  <xsl:template name="cdf:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']"<%if klass.children.any?%> priority="<%=getDepth.call(klass.children,1)*-1 %>" <%end%>>
+  <xsl:template name="<%=package.name%>:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']"<%if klass.children.any?%> priority="<%=getDepth.call(klass.children,1)*-1 %>" <%end%>>
     <xsl:param name="set_type" select="true()" />
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
     <xsl:attribute name="ObjectId">
@@ -126,9 +126,13 @@
     <xsl:if test="$set_type">
       <xsl:attribute name="xsi:type"><%= klass.name %></xsl:attribute>
     </xsl:if>
-    <xsl:call-template name="cdf:<%=klass.parents.first.name%>">       
+    <xsl:call-template name="<%=package.name%>:<%=klass.parents.first.name%>">       
       <xsl:with-param name="set_type" select="false()" />
     </xsl:call-template>
+<% end %>
+<%# Handle implementation of interfaces (these are NOT abstract), which spit out the class name as a tag %>
+<% if klass.implements.any? %>
+<<%=package.name %>:<%= klass.name %>>
 <% end %>
 <%# Begin UML property enumeration %>
 <% klass.properties.sort_by{|p|get_sortable_prop_name(klass,p)}.each do |property| %>
@@ -151,10 +155,10 @@
     <%# if it is an array, then we need to apply special logic %>
     <% calculated_data_type = property.multiple? ? 'array' : get_property_type(property) %>
     <% is_idrefs = !property.composite? && property.association? %>
-        <% if property.multiple? %>
-          <% if is_idrefs %>
-          <%# handle the use of IDREFS, which must map to arrays %>
-            <<%= property_name %>>
+      <% if property.multiple? %>
+        <% if is_idrefs %>
+        <%# handle the use of IDREFS, which must map to arrays %>
+          <<%=package.name %>:<%= property_name %>>
               <xsl:variable name="idrefs">
               <xsl:for-each select="*[@key = '<%=property_name%>']/string">
           <% else %>
@@ -162,26 +166,26 @@
           <% end %>
           <% if get_property_type(property) == 'map' %>
             <%# use anonynomous map %>
-            <<%= property_name %>>
+            <<%=package.name %>:<%= property_name %>>
               <xsl:apply-templates select="." />
-            </<%= property_name %>>
+            </<%=package.name %>:<%= property_name %>>
           <% elsif is_xml_attribute || is_idrefs %>         
               <xsl:value-of select="concat(' ', .)" />         
           <% elsif property.type.primitive? || property.type.enumeration? %>
-            <<%= property_name %>>    
+            <<%=package.name %>:<%= property_name %>>    
               <xsl:value-of select="."/>
-            </<%= property_name %>>    
+            </<%=package.name %>:<%= property_name %>>    
           <% else %>
-            <<%= property_name %>>    
+            <<%=package.name %>:<%= property_name %>>    
               <xsl:value-of select="*[@key = '<%= property_name %>']"/>
-            </<%= property_name %>>    
+            </<%=package.name %>:<%= property_name %>>    
           <% end %>                        
           </xsl:for-each>
           <%# handle closure of idrefs (one for all array items)%>
           <% if is_idrefs %>
             </xsl:variable>
             <xsl:value-of select="normalize-space($idrefs)" />
-            </<%= property_name %>>
+            </<%=package.name %>:<%= property_name %>>
           <% end %>
         <%# Single %>
         <%else%>
@@ -191,16 +195,19 @@
               <xsl:value-of select="*[@key = '<%= property_name %>']" />
             </xsl:attribute>
         <%else%>
-          <<%= property_name %>>
+          <<%=package.name %>:<%= property_name %>>
             <% if get_property_type(property) == 'map' %>
               <xsl:apply-templates select="*[@key = '<%= property_name %>']" />
             <% else %>
               <xsl:value-of select="*[@key = '<%= property_name %>']"/>
             <% end %>
-          </<%= property_name %>>
+          </<%=package.name %>:<%= property_name %>>
           <% end %>
         <% end %>
 </xsl:if>
+<% end %>
+<% if klass.implements.any? %>
+</<%=package.name %>:<%= klass.name %>>
 <% end %>
   </xsl:template>
 <% end %>
