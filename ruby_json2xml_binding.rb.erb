@@ -55,26 +55,26 @@
     if is_xml_attribute
       ' ' + standardized_property #use low ASCII table character to sort ahead of everything else
     # for items supposed to appear together, make them sort after their ancestor by adding a space
-    elsif standardized_property == 'otherdisposition'
-      'disposition '
-    elsif standardized_property == 'otherhashtype'
-      'hashtype '
-    elsif standardized_property == 'othertype'
-      'type '
-    elsif standardized_property == 'endtime'
-      'starttime '
-    elsif standardized_property == 'enddate'
-      'startdate '
-    elsif standardized_property == 'othervotevariation'
-      'votevariation '
-    elsif standardized_property == 'sequenceend'
-      'sequencestart '
-    elsif standardized_property == 'istest'
-      'issuerabbreviation '
-    elsif standardized_property == 'otherstatus'
-      'status '
-    elsif standardized_property == 'otherreporttype'
-      'reporttype '
+    # elsif standardized_property == 'otherdisposition'
+    #   'disposition '
+    # elsif standardized_property == 'otherhashtype'
+    #   'hashtype '
+    # elsif standardized_property == 'othertype'
+    #   'type '
+    # elsif standardized_property == 'endtime'
+    #   'starttime '
+    # elsif standardized_property == 'enddate'
+    #   'startdate '
+    # elsif standardized_property == 'othervotevariation'
+    #   'votevariation '
+    # elsif standardized_property == 'sequenceend'
+    #   'sequencestart '
+    # elsif standardized_property == 'istest'
+    #   'issuerabbreviation '
+    # elsif standardized_property == 'otherstatus'
+    #   'status '
+    # elsif standardized_property == 'otherreporttype'
+    #   'reporttype '
     else
       standardized_property
     end
@@ -85,6 +85,7 @@
 <% @all_packages.each do |package|  
    root_class = "VoterRecordsRequest"
 %>
+<% if package.applied_stereotypes.any?{|s| s.name == 'XML Schema'} %>
 <xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions"  xmlns:addr="http://www.fgdc.gov/schemas/address/addr" xmlns:addr_type="http://www.fgdc.gov/schemas/address/addr_type" xmlns:VRI="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" exclude-result-prefixes="cdf" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:template name="start" match=".[. instance of map(*)]" priority="1">
@@ -95,6 +96,7 @@
 		</xsl:variable>
 		<xsl:copy-of select="$xml"/>
 	</xsl:template>
+<% end %>
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
 <% getDepth = -> (klasses, highest) {
     curHigh = highest;    
@@ -124,7 +126,7 @@
   <%# Call parent class' template %>
   <%# Must have a xsi:type, so add now %>
     <xsl:if test="$set_type">
-      <xsl:attribute name="xsi:type"><%= klass.name %></xsl:attribute>
+      <xsl:attribute name="xsi:type"><%= klass.package.name %>:<%= klass.name %></xsl:attribute>
     </xsl:if>
     <xsl:call-template name="<%=klass.package.name%>:<%=klass.parents.first.name%>">       
       <xsl:with-param name="set_type" select="false()" />
@@ -132,7 +134,7 @@
 <% end %>
 <%# Handle implementation of interfaces (these are NOT abstract), which spit out the class name as a tag %>
 <% if klass.implements.any? %>
-<<%=klass.package.name %>:<%= klass.name %>>
+<<%=klass.implements[0].package.name %>:<%= klass.name %>>
 <% end %>
 <%# Begin UML property enumeration %>
 <% klass.properties.sort_by{|p|get_sortable_prop_name(klass,p)}.each do |property| %>
@@ -154,11 +156,12 @@
 <% end %>
     <%# if it is an array, then we need to apply special logic %>
     <% calculated_data_type = property.multiple? ? 'array' : get_property_type(property) %>
+    <% use_target_namespace = property.applied_stereotypes.any?{|s| s.name == 'useTargetNamespace'} %>
     <% is_idrefs = !property.composite? && property.association? %>
       <% if property.multiple? %>
         <% if is_idrefs %>
         <%# handle the use of IDREFS, which must map to arrays %>
-          <<%=klass.package.name %>:<%= property_name %>>
+          <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
               <xsl:variable name="idrefs">
               <xsl:for-each select="*[@key = '<%= property_name %>']/string">
           <% else %>
@@ -166,19 +169,19 @@
           <% end %>
           <% if get_property_type(property) == 'map' %>
             <%# use anonynomous map %>
-            <<%=klass.package.name %>:<%= property_name %>>
+            <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
               <xsl:apply-templates select="." />
-            </<%=klass.package.name%>:<%= property_name %>>
+            </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
           <% elsif is_xml_attribute || is_idrefs %>         
               <xsl:value-of select="concat(' ', .)" />         
           <% elsif property.type.primitive? || property.type.enumeration? %>
-            <<%=klass.package.name %>:<%= property_name %>>    
+            <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
               <xsl:value-of select="."/>
-            </<%=klass.package.name%>:<%= property_name %>>    
+            </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
           <% else %>
-            <<%=klass.package.name %>:<%= property_name %>>    
+            <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
               <xsl:value-of select="*[@key = '<%= property_name %>']"/>
-            </<%=klass.package.name%>:<%= property_name %>>    
+            </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
           <% end %>                        
           </xsl:for-each>
           <%# handle closure of idrefs (one for all array items)%>
@@ -195,19 +198,19 @@
               <xsl:value-of select="*[@key = '<%= property_name %>']" />
             </xsl:attribute>
         <%else%>
-          <<%=klass.package.name%>:<%= property_name %>>
+          <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
             <% if get_property_type(property) == 'map' %>
               <xsl:apply-templates select="*[@key = '<%= property_name %>']" />
             <% else %>
               <xsl:value-of select="*[@key = '<%= property_name %>']"/>
             <% end %>
-          </<%=klass.package.name%>:<%= property_name %>>
+          </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
           <% end %>
         <% end %>
 </xsl:if>
 <% end %>
 <% if klass.implements.any? %>
-</<%=klass.package.name%>:<%= klass.name %>>
+</<%=klass.implements[0].package.name%>:<%= klass.name %>>
 <% end %>
   </xsl:template>
 <% end %>
