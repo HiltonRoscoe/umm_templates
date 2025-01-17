@@ -1,13 +1,50 @@
-<?xml version="1.0" encoding="UTF-8"?>
-  <% require 'active_support/inflector'
+<%#
+  This template is used to convert Ruby Metamodels (exported from MagicDraw) into XSLT3+ based JSON to XML conversion
+  scripts. 
+  
+  Locals:
+  +root_class+:: The root class in the UML Model
+  +target_schema+:: Target schema namespace
+    
+  Some notes:
+  - There is no attempt to provide "pretty" XSLT output using this spreadsheet, use a postprocessing step instead
+  - This script now generates namespace prefixed output. If you don't like that, use a postprocessing step
+  - There are some unavoidable hardcodings to support VRI
+
 %>
-<% xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
+<?xml version="1.0" encoding="UTF-8"?>
+<% require 'active_support/inflector'
+%>
+<% 
+  # Ensure required locals are defined
+  raise "You must specify locals root_class for the domain model" unless @locals[:root_class]
+  raise "You must specify locals target_schema for the domain model" unless @locals[:target_schema]  
+  version = @locals[:version]
+  version ||= 'v' + @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'} \
+    .applied_tags.find{|t| t.name == 'major_version'}.value rescue nil
+  raise "You must specify a version for the domain model" unless version
+
+  class InvalidNCNameError < StandardError; end
+
+  # Validates a NCName. Throws if fails  
+  # Params:
+  # +param+:: String to validate
+  def validate_ncname(param)
+    # Regular expression for NCName
+    ncname_regex = /^[A-Za-z_][\w.-]*$/
+    
+    unless param.is_a?(String) && param.match?(ncname_regex)
+      raise InvalidNCNameError, "Invalid NCName: '#{param}'"
+    end
+
+    true # Return true if valid
+  end
+  validate_ncname(@locals[:root_class])
   @outer_module = @locals[:outer_module] || 'OuterModule'
+  %>
+<% xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
   id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
   plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
-  version = @locals[:version]
-  version ||= 'v' + @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}.applied_tags.find{|t| t.name == 'major_version'}.value rescue nil
-  raise "You must specify a version for the domain model" unless version
   # Gets the standardized name for a given property. The standardized name should match what was generated
   # during XSD or JSON Schema generation
   # Params:
@@ -29,7 +66,7 @@
     name 
   end
 
-  # Gets the JSON type given a property.
+  # Gets the JSON type given a UML property.
   # Params:
   # +property+:: The UMM property
   def get_property_type(property)
@@ -55,46 +92,54 @@
     if is_xml_attribute
       ' ' + standardized_property #use low ASCII table character to sort ahead of everything else
     # for items supposed to appear together, make them sort after their ancestor by adding a space
-    # elsif standardized_property == 'otherdisposition'
-    #   'disposition '
-    # elsif standardized_property == 'otherhashtype'
-    #   'hashtype '
-    # elsif standardized_property == 'othertype'
-    #   'type '
-    # elsif standardized_property == 'endtime'
-    #   'starttime '
-    # elsif standardized_property == 'enddate'
-    #   'startdate '
-    # elsif standardized_property == 'othervotevariation'
-    #   'votevariation '
-    # elsif standardized_property == 'sequenceend'
-    #   'sequencestart '
-    # elsif standardized_property == 'istest'
-    #   'issuerabbreviation '
-    # elsif standardized_property == 'otherstatus'
-    #   'status '
-    # elsif standardized_property == 'otherreporttype'
-    #   'reporttype '
+    elsif standardized_property == 'otherdisposition'
+      'disposition '
+    elsif standardized_property == 'otherhashtype'
+      'hashtype '
+    elsif standardized_property == 'othertype'
+      'type '
+    elsif standardized_property == 'endtime'
+      'starttime '
+    elsif standardized_property == 'enddate'
+      'startdate '
+    elsif standardized_property == 'othervotevariation'
+      'votevariation '
+    elsif standardized_property == 'sequenceend'
+      'sequencestart '
+    elsif standardized_property == 'istest'
+      'issuerabbreviation '
+    elsif standardized_property == 'otherstatus'
+      'status '
+    elsif standardized_property == 'otherreporttype'
+      'reporttype '
     else
       standardized_property
     end
   end
-
 %>
 
 <% @all_packages.each do |package|  
-   root_class = "VoterRecordsRequest"
+   root_class = @locals[:root_class] 
 %>
 <% if package.applied_stereotypes.any?{|s| s.name == 'XML Schema'} %>
-<xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions"  xmlns:addr="http://www.fgdc.gov/schemas/address/addr" xmlns:addr_type="http://www.fgdc.gov/schemas/address/addr_type" xmlns:VRI="<%= @locals[:target_schema] %>" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cdf="<%= @locals[:target_schema] %>" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" exclude-result-prefixes="cdf" version="3.0">
+<xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions" 
+    <%# hard coding to support VRI %>
+    <% if @locals[:target_schema] == 'http://itl.nist.gov/ns/voting/1500-102/v1' %>
+    xmlns:addr="http://www.fgdc.gov/schemas/address/addr"
+    xmlns:addr_type="http://www.fgdc.gov/schemas/address/addr_type"
+    <% end %>
+    xmlns:cdf="<%= @locals[:target_schema] %>"
+    xmlns:<%=package.name%>="<%= @locals[:target_schema] %>" 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsl="http://www.w3.org/1999/XSL/Transform" exclude-result-prefixes="cdf" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:template name="start" match=".[. instance of map(*)]" priority="1">
-		<xsl:variable name="xml">
-      <<%=package.name %>:<%= root_class %>>
-			  		<xsl:apply-templates select=". => serialize(map { 'method' : 'json' }) => json-to-xml()"/>
-      </<%=package.name %>:<%= root_class %>>
-		</xsl:variable>
-		<xsl:copy-of select="$xml"/>
+	<xsl:variable name="xml">
+    <<%=package.name %>:<%= root_class %>>
+	  	<xsl:apply-templates select=". => serialize(map { 'method' : 'json' }) => json-to-xml()"/>
+    </<%=package.name %>:<%= root_class %>>
+	</xsl:variable>
+	<xsl:copy-of select="$xml"/>
 	</xsl:template>
 <% end %>
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
@@ -143,12 +188,13 @@
 <% property_name = get_property_name(property, id_suffix, plural_id_suffix) %>
 <%# need to hijack this code to handle FGDC spec stuff. Basically need to say there IS simple content, and anything not called Value should get it%>
 <% klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} %>
-<% klass_has_simple_target = klass.properties.any?{|p| p.name == 'Value'} %>
+<%# must only apply to FGDC spec or it breaks other things! %>
+<% klass_has_simple_target = klass.properties.any?{|p| p.name == 'Value'} && ['addr','addr_type'].include?(klass.package.name) %>
 <% is_xml_attribute =  (klass_has_simple_target && property.name != 'Value') || (klass_has_simple_content && !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} %>
 <%# determine if we need to output the property %>
 <% if is_xml_attribute %>
     <xsl:if test="boolean(*[@key = '<%= property_name %>'])">  
-<% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } || property.name == 'Value'  %>
+<% elsif property.applied_stereotypes.any?{|s| s.name == 'simpleContent' } || property.name == 'Value' &&  ['addr','addr_type'].include?(klass.package.name) %>
     <xsl:value-of select="*[@key = '<%= property_name %>']" />
 <% next %>
 <% else %>
@@ -188,7 +234,7 @@
           <% if is_idrefs %>
             </xsl:variable>
             <xsl:value-of select="normalize-space($idrefs)" />
-            </<%= property_name %>>
+            </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
           <% end %>
         <%# Single %>
         <%else%>
