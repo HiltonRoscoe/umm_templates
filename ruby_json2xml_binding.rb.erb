@@ -19,20 +19,12 @@
 %>
 <% 
   # Ensure required locals are defined
-  raise "You must specify locals root_class for the domain model" unless @locals[:root_class]
   raise "You must specify locals target_schema for the domain model" unless @locals[:target_schema]  
   version = @locals[:version]
   # looks at all packages, maybe not a great idea?
-  version ||= 'v' + @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'} \
+  version ||= @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'} \
     .applied_tags.find{|t| t.name == 'major_version'}.value rescue nil
   raise "You must specify a version for the domain model" unless version
-
-
-  root_classes = @locals[:root_class].split(" ")
-  root_classes.each do |root_class|
-    validate_ncname(root_class)
-  end
-  @outer_module = @locals[:outer_module] || 'OuterModule'
   %>
 <%# Tracking header %>
 <%
@@ -47,29 +39,26 @@
  -->
 
 <%  
- xml_packages = @all_packages.map do |package|  
+  xml_packages = @all_packages.map do |package|  
   xml_schema_stereotype = package.applied_stereotypes.find{|s| s.name == 'XML Schema'}
-  id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
-  plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
-  ns_prefix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'prefix'}.value rescue 'unk'
-  ns_raw = xml_schema_stereotype.applied_tags.find{|t| t.name == 'targetNamespace'}.value rescue 'unk'
-  ns = ns_raw.gsub("<MAJOR_VERSION>", version)
-  puts ns
- #if package.applied_stereotypes.any?{|s| s.name == 'XML Schema'} 
- # namespaces.push(collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'} \
- #   .applied_tags.find{|t| t.name == ''}.value rescue nil
-   {
-    id_suffix: id_suffix,
-    plural_id_suffix: plural_id_suffix,
-    ns_prefix: ns_prefix,
-    ns: ns
-  }
+  if xml_schema_stereotype
+    id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
+    plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
+    ns_prefix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'prefix'}.value rescue 'unk'
+    ns_raw = xml_schema_stereotype.applied_tags.find{|t| t.name == 'targetNamespace'}.value rescue 'unk'
+    ns = ns_raw.gsub("<MAJOR_VERSION>", version)
+    {
+      id_suffix: id_suffix,
+      plural_id_suffix: plural_id_suffix,
+      ns_prefix: ns_prefix,
+      ns: ns
+    }
+  end
 end 
-%>
-  
+%>  
  
 <xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions" 
-    <%# hard coding to support VRI %>
+    <%# output each XML Schema's namespace and prefix from XML Schema stereotype %>
     <% xml_packages.each do |data| %>
       xmlns:<%=data[:ns_prefix]%>="<%=data[:ns]%>"
     <% end %>
@@ -78,19 +67,23 @@ end
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:template name="start" match=".[. instance of map(*)]" priority="1">
 	<xsl:variable name="xml" select=". => serialize(map { 'method' : 'json' }) => json-to-xml()" />
-	
 <% @all_packages.each do |package|  
- if package.applied_stereotypes.any?{|s| s.name == 'XML Schema'} 
   xml_schema_stereotype = package.applied_stereotypes.find{|s| s.name == 'XML Schema'}
+  if xml_schema_stereotype 
   ns_prefix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'prefix'}.value rescue 'unk'
   id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
   plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
   %>
-    <% root_classes.each do |root_class| %>
-    <xsl:if test="$xml/*[string = '<%= package.name %>.<%= root_class %>' and string/@key = '@type']">  
-      <<%=ns_prefix %>:<%= root_class %>>
+    <%      
+      # Determine root classes (those with a <<Root>> stereotype applied)
+      root_classes = package.classes.select{|c| c.applied_stereotypes.any?{|s| s.name =~ /^root$/i} }    
+      root_classes.each do |root_class|
+      validate_ncname(root_class.name)
+      %>
+    <xsl:if test="$xml/*[string = '<%= package.name %>.<%= root_class.name %>' and string/@key = '@type']">  
+      <<%=ns_prefix %>:<%= root_class.name %>>
 	      <xsl:apply-templates select="$xml"/>
-      </<%=ns_prefix %>:<%= root_class %>>
+      </<%=ns_prefix %>:<%= root_class.name %>>
     </xsl:if>
     <% end %>
 	</xsl:template>
@@ -124,9 +117,9 @@ end
   <%# Call parent class' template %>
   <%# Must have a xsi:type, so add now %>
     <xsl:if test="$set_type">
-      <xsl:attribute name="xsi:type"><%= klass.package.name %>:<%= klass.name %></xsl:attribute>
+      <xsl:attribute name="xsi:type"><%= ns_prefix %>:<%= klass.name %></xsl:attribute>
     </xsl:if>
-    <xsl:call-template name="<%=klass.package.name%>:<%=klass.parents.first.name%>">       
+    <xsl:call-template name="<%=ns_prefix%>:<%=klass.parents.first.name%>">       
       <xsl:with-param name="set_type" select="false()" />
     </xsl:call-template>
 <% end %>

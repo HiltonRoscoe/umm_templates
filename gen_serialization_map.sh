@@ -14,7 +14,6 @@ declare -A template1=(
     [model]="~/Prometheus/Generated_Code/BallotDefinition UML Model-0.0.0.rb"
     [prefix]="BallotDefinition"
     [schema]="http://itl.nist.gov/ns/voting/1500-20/v1"
-    [root]="BallotDefinition"
 )
 declare -A template2=(
     [template]="/umm_templates/ruby_json2xml_binding.rb.erb"
@@ -23,7 +22,6 @@ declare -A template2=(
     [model]="~/Prometheus/Generated_Code/NIST-1.0.0.rb"
     [prefix]="CVR"
     [schema]="http://itl.nist.gov/ns/voting/1500-103/v1"
-    [root]="CastVoteRecordReport"
 )
 declare -A template3=(
     [template]="/umm_templates/ruby_json2xml_binding.rb.erb"
@@ -32,7 +30,6 @@ declare -A template3=(
     [model]="~/Prometheus/Generated_Code/EventLogging-1.0.0.rb"
     [prefix]="EventLogging"
     [schema]="http://itl.nist.gov/ns/voting/1500-101/v1"
-    [root]="ElectionEventLog ElectionEventLogDocumentation"
 )
 declare -A template4=(
     [template]="/umm_templates/ruby_json2xml_binding.rb.erb"
@@ -41,16 +38,14 @@ declare -A template4=(
     [model]="~/Prometheus/Generated_Code/NIST-2.0.0.rb"
     [prefix]="ElectionResults"
     [schema]="http://itl.nist.gov/ns/voting/1500-101/v1"
-    [root]="ElectionResultsReport"
 )
 declare -A template5=(
     [template]="/umm_templates/ruby_json2xml_binding.rb.erb"
     [output]="/VoterRecordsInterchange/json2xml.xsl"
-    [module]="VRI"
+    [module]="VRI Implementation"
     [model]="~/Prometheus/Generated_Code/VRI Implementation-0.0.0.rb"
     [prefix]="VRI"
     [schema]="http://itl.nist.gov/ns/voting/1500-102/v1"
-    [root]="VoterRecordsRequest"
 )
 
 # Store all templates in an array
@@ -66,7 +61,7 @@ for template_name in "${templates[@]}"; do
         -l outer_module="${template[module]}" \
         "${template[model]}" \
         -p "${template[prefix]}" \
-        --locals "target_schema=${template[schema]},root_class=${template[root]}"
+        --locals "target_schema=${template[schema]}"
     # Post-processing: Check if the output is a valid XML file
     if xmllint --noout "${template[output]}" 2>/dev/null; then
         echo "🟩 Validation passed: ${template[output]} is a valid XML file."
