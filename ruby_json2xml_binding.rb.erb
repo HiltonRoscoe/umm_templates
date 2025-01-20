@@ -15,31 +15,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <% require 'active_support/inflector'
    require 'digest'
+   require_relative 'helpers'
 %>
 <% 
   # Ensure required locals are defined
   raise "You must specify locals root_class for the domain model" unless @locals[:root_class]
   raise "You must specify locals target_schema for the domain model" unless @locals[:target_schema]  
   version = @locals[:version]
+  # looks at all packages, maybe not a great idea?
   version ||= 'v' + @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'} \
     .applied_tags.find{|t| t.name == 'major_version'}.value rescue nil
   raise "You must specify a version for the domain model" unless version
 
-  class InvalidNCNameError < StandardError; end
 
-  # Validates a NCName. Throws if fails  
-  # Params:
-  # +param+:: String to validate
-  def validate_ncname(param)
-    # Regular expression for NCName
-    ncname_regex = /^[A-Za-z_][\w.-]*$/
-    
-    unless param.is_a?(String) && param.match?(ncname_regex)
-      raise InvalidNCNameError, "Invalid NCName: '#{param}'"
-    end
-
-    true # Return true if valid
-  end
   root_classes = @locals[:root_class].split(" ")
   root_classes.each do |root_class|
     validate_ncname(root_class)
@@ -57,109 +45,57 @@
   <%= key %>=<%=value%>
 <%end%>
  -->
-<% xml_schema_stereotype = @all_packages.collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'}
+
+<%  
+ xml_packages = @all_packages.map do |package|  
+  xml_schema_stereotype = package.applied_stereotypes.find{|s| s.name == 'XML Schema'}
   id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
   plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
-  # Gets the standardized name for a given property. The standardized name should match what was generated
-  # during XSD or JSON Schema generation
-  # Params:
-  # +property+:: The UMM property
-  # +singular_id_suffix:: The suffix used for singular Identifier references
-  # +plural_id_suffix:: The suffix used for plural Identifier references
-  # +pluralize_roles:: Whether role names should be pluralized
-  # +underscore:: Whether CamelCase should be converted to under_score
-  def get_property_name(property, singular_id_suffix, plural_id_suffix, pluralize_roles = false, underscore = false)
-  	name = property.name
-    name ||= property.type.name
-    name = name.underscore if underscore
-    if property.association? && !(property.attribute? || property.composite?)
-      id_suffix = property.multiple? ? plural_id_suffix : singular_id_suffix
-      name = name + id_suffix 
-    else
-      name = name.pluralize if property.multiple? && pluralize_roles 
-    end
-    name 
-  end
-
-  # Gets the JSON type given a UML property.
-  # Params:
-  # +property+:: The UMM property
-  def get_property_type(property)
-    if !(property.type.primitive? || property.type.enumeration? || (property.association? && !(property.attribute?) && !(property.composite?))) # This may not cover all necessary cases
-      "map"
-    elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:integer],UmlMetamodel::PRIMITIVES[:float], UmlMetamodel::PRIMITIVES[:double]].include?(property.type.base_primitive)
-      "number"
-    elsif property.type.primitive? && [UmlMetamodel::PRIMITIVES[:boolean]].include?(property.type.base_primitive)
-      "boolean"
-    else
-      "string"
-    end
-  end
-  # Determines the order that properties should appear in the output. XSD uses 
-  # sequences and elements must appear in a certain order
-  # Params:
-  # +klass+:: The UMM Class
-  # +property+:: The UMM property
-  def get_sortable_prop_name(klass, property)
-    klass_has_simple_content = klass.properties.any?{|p| p.applied_stereotypes.any?{|s| s.name == 'simpleContent'}} 
-    is_xml_attribute = (klass_has_simple_content &&  !property.applied_stereotypes.any?{|s| s.name == 'simpleContent' }) || property.applied_stereotypes.any?{|s| s.name == 'xmlAttribute'} 
-    standardized_property = (property.name || property.type.name).downcase 
-    if is_xml_attribute
-      ' ' + standardized_property #use low ASCII table character to sort ahead of everything else
-    # for items supposed to appear together, make them sort after their ancestor by adding a space
-    elsif standardized_property == 'otherdisposition'
-      'disposition '
-    elsif standardized_property == 'otherhashtype'
-      'hashtype '
-    elsif standardized_property == 'othertype'
-      'type '
-    elsif standardized_property == 'endtime'
-      'starttime '
-    elsif standardized_property == 'enddate'
-      'startdate '
-    elsif standardized_property == 'othervotevariation'
-      'votevariation '
-    elsif standardized_property == 'sequenceend'
-      'sequencestart '
-    elsif standardized_property == 'istest'
-      'issuerabbreviation '
-    elsif standardized_property == 'otherstatus'
-      'status '
-    elsif standardized_property == 'otherreporttype'
-      'reporttype '
-    else
-      standardized_property
-    end
-  end
+  ns_prefix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'prefix'}.value rescue 'unk'
+  ns_raw = xml_schema_stereotype.applied_tags.find{|t| t.name == 'targetNamespace'}.value rescue 'unk'
+  ns = ns_raw.gsub("<MAJOR_VERSION>", version)
+  puts ns
+ #if package.applied_stereotypes.any?{|s| s.name == 'XML Schema'} 
+ # namespaces.push(collect{|p| p.applied_stereotypes}.flatten.find{|s| s.name == 'XML Schema'} \
+ #   .applied_tags.find{|t| t.name == ''}.value rescue nil
+   {
+    id_suffix: id_suffix,
+    plural_id_suffix: plural_id_suffix,
+    ns_prefix: ns_prefix,
+    ns: ns
+  }
+end 
 %>
-
-<% @all_packages.each do |package|  
-%>
-<% if package.applied_stereotypes.any?{|s| s.name == 'XML Schema'} %>
+  
+ 
 <xsl:stylesheet xml:id="json2xml" xpath-default-namespace="http://www.w3.org/2005/xpath-functions" 
     <%# hard coding to support VRI %>
-    <% if @locals[:target_schema] == 'http://itl.nist.gov/ns/voting/1500-102/v1' %>
-    xmlns:addr="http://www.fgdc.gov/schemas/address/addr"
-    xmlns:addr_type="http://www.fgdc.gov/schemas/address/addr_type"
+    <% xml_packages.each do |data| %>
+      xmlns:<%=data[:ns_prefix]%>="<%=data[:ns]%>"
     <% end %>
-    xmlns:cdf="<%= @locals[:target_schema] %>"
-    xmlns:<%=package.name%>="<%= @locals[:target_schema] %>" 
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xmlns:xsl="http://www.w3.org/1999/XSL/Transform" exclude-result-prefixes="cdf" version="3.0">
+    xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="3.0">
 	<xsl:output method="xml" version="1.0" encoding="UTF-8" indent="yes"/>
   <xsl:template name="start" match=".[. instance of map(*)]" priority="1">
 	<xsl:variable name="xml" select=". => serialize(map { 'method' : 'json' }) => json-to-xml()" />
 	
+<% @all_packages.each do |package|  
+ if package.applied_stereotypes.any?{|s| s.name == 'XML Schema'} 
+  xml_schema_stereotype = package.applied_stereotypes.find{|s| s.name == 'XML Schema'}
+  ns_prefix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'prefix'}.value rescue 'unk'
+  id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_references'}.value rescue 'Id'
+  plural_id_suffix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'id_suffix_for_plural_references'}.value rescue 'Ids'
+  %>
     <% root_classes.each do |root_class| %>
     <xsl:if test="$xml/*[string = '<%= package.name %>.<%= root_class %>' and string/@key = '@type']">  
-      <<%=package.name %>:<%= root_class %>>
+      <<%=ns_prefix %>:<%= root_class %>>
 	      <xsl:apply-templates select="$xml"/>
-      </<%=package.name %>:<%= root_class %>>
+      </<%=ns_prefix %>:<%= root_class %>>
     </xsl:if>
     <% end %>
 	</xsl:template>
-<% end %>
 <% package.classes.sort_by{|c|c.name}.each do |klass| %>
+<%# now do all classes as one %>
 <% getDepth = -> (klasses, highest) {
     curHigh = highest;    
     klasses.each {
@@ -177,7 +113,7 @@
 %>
 <%# the not ensures we don't match any parent types, we will call them explicitly %>
 <%# abstracts should have no match!%>
-  <xsl:template name="<%=klass.package.name%>:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']"<%if klass.children.any?%> priority="<%=getDepth.call(klass.children,1)*-1 %>" <%end%>>
+  <xsl:template name="<%=ns_prefix%>:<%= klass.name %>" match="*[string = '<%= package.name %>.<%= klass.name %>' and string/@key = '@type']"<%if klass.children.any?%> priority="<%=getDepth.call(klass.children,1)*-1 %>" <%end%>>
     <xsl:param name="set_type" select="true()" />
 <% if klass.parents.empty? && klass.properties.any?{|property| property.association? && property.opposite.is_navigable && !property.opposite.composite? } %>
     <xsl:attribute name="ObjectId">
@@ -199,7 +135,11 @@
 <<%=klass.implements[0].package.name %>:<%= klass.name %>>
 <% end %>
 <%# Begin UML property enumeration %>
-<% klass.properties.sort_by{|p|get_sortable_prop_name(klass,p)}.each do |property| %>
+
+<% klass.properties.sort_by{|p|get_sortable_prop_name(klass,p)}.each do |property| 
+
+%>
+
 <%# Avoid properties (associations) from other direction %>
 <% next unless property.is_navigable %>
 <% property_name = get_property_name(property, id_suffix, plural_id_suffix) %>
@@ -219,12 +159,17 @@
 <% end %>
     <%# if it is an array, then we need to apply special logic %>
     <% calculated_data_type = property.multiple? ? 'array' : get_property_type(property) %>
-    <% use_target_namespace = property.applied_stereotypes.any?{|s| s.name == 'useTargetNamespace'} %>
+    <% use_target_namespace = property.applied_stereotypes.any?{|s| s.name == 'useTargetNamespace'} 
+    #calculate namespace prefix
+    property_ns_package = use_target_namespace ? property.type.package : klass.package
+    xml_schema_stereotype = property_ns_package.applied_stereotypes.find{|s| s.name == 'XML Schema'}
+    property_ns_prefix = xml_schema_stereotype.applied_tags.find{|t| t.name == 'prefix'}.value rescue 'unk'
+    %>
     <% is_idrefs = !property.composite? && property.association? %>
       <% if property.multiple? %>
         <% if is_idrefs %>
         <%# handle the use of IDREFS, which must map to arrays %>
-          <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
+          <<%= property_ns_prefix %>:<%= property_name %>>
               <xsl:variable name="idrefs">
               <xsl:for-each select="*[@key = '<%= property_name %>']/string">
           <% else %>
@@ -232,26 +177,26 @@
           <% end %>
           <% if get_property_type(property) == 'map' %>
             <%# use anonynomous map %>
-            <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
+          <<%= property_ns_prefix %>:<%= property_name %>>
               <xsl:apply-templates select="." />
-            </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
+            </<%= property_ns_prefix %>:<%= property_name %>>
           <% elsif is_xml_attribute || is_idrefs %>         
               <xsl:value-of select="concat(' ', .)" />         
           <% elsif property.type.primitive? || property.type.enumeration? %>
-            <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
+          <<%= property_ns_prefix %>:<%= property_name %>>
               <xsl:value-of select="."/>
-            </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
+            </<%= property_ns_prefix %>:<%= property_name %>>    
           <% else %>
-            <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
+          <<%= property_ns_prefix %>:<%= property_name %>>
               <xsl:value-of select="*[@key = '<%= property_name %>']"/>
-            </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
+            </<%= property_ns_prefix %>:<%= property_name %>>    
           <% end %>                        
           </xsl:for-each>
           <%# handle closure of idrefs (one for all array items)%>
           <% if is_idrefs %>
             </xsl:variable>
             <xsl:value-of select="normalize-space($idrefs)" />
-            </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>    
+            </<%= property_ns_prefix %>:<%= property_name %>>    
           <% end %>
         <%# Single %>
         <%else%>
@@ -261,13 +206,13 @@
               <xsl:value-of select="*[@key = '<%= property_name %>']" />
             </xsl:attribute>
         <%else%>
-          <<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
+          <<%= property_ns_prefix %>:<%= property_name %>>
             <% if get_property_type(property) == 'map' %>
               <xsl:apply-templates select="*[@key = '<%= property_name %>']" />
             <% else %>
               <xsl:value-of select="*[@key = '<%= property_name %>']"/>
             <% end %>
-          </<%= use_target_namespace ? property.type.package.name : klass.package.name %>:<%= property_name %>>
+          </<%= property_ns_prefix %>:<%= property_name %>>
           <% end %>
         <% end %>
 </xsl:if>
@@ -276,6 +221,7 @@
 </<%=klass.implements[0].package.name%>:<%= klass.name %>>
 <% end %>
   </xsl:template>
+<% end %>
 <% end %>
 <% end %>
 </xsl:stylesheet>
