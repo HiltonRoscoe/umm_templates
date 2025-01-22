@@ -86,3 +86,12 @@
       "string"
     end
   end
+
+  # Helper methods for extracting specific information from stereotypes and tags
+  def find_stereotype(package, name)
+    package.applied_stereotypes.find { |s| s.name == name }
+  end
+
+  def find_tag_value(stereotype, tag_name, default_value = nil)
+    stereotype&.applied_tags&.find { |t| t.name == tag_name }&.value || default_value
+  end

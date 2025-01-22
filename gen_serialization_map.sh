@@ -18,7 +18,7 @@ declare -A template1=(
 declare -A template2=(
     [template]="/umm_templates/ruby_json2xml_binding.rb.erb"
     [output]="/CastVoteRecords/json2xml.xsl"
-    [module]="NIST"
+    [module]="CVR"
     [model]="~/Prometheus/Generated_Code/NIST-1.0.0.rb"
     [prefix]="CVR"
     [schema]="http://itl.nist.gov/ns/voting/1500-103/v1"
@@ -42,26 +42,25 @@ declare -A template4=(
 declare -A template5=(
     [template]="/umm_templates/ruby_json2xml_binding.rb.erb"
     [output]="/VoterRecordsInterchange/json2xml.xsl"
-    [module]="VRI Implementation"
+    [module]="VRI"
     [model]="~/Prometheus/Generated_Code/VRI Implementation-0.0.0.rb"
     [prefix]="VRI"
     [schema]="http://itl.nist.gov/ns/voting/1500-102/v1"
 )
 
 # Store all templates in an array
-templates=(template1 template2 template3 template4 template5)
-#set -x
+templates=(template2)
+set -x
 # Iterate through the templates and execute `umm_template`
 for template_name in "${templates[@]}"; do
     eval "declare -n template=$template_name"
     echo 🛠️ JSON2XML for "${template[model]}"
     umm_template \
+        "${template[model]}" \
         -t "${template[template]}" \
         -o "${template[output]}" \
-        -l outer_module="${template[module]}" \
-        "${template[model]}" \
-        -p "${template[prefix]}" \
-        --locals "target_schema=${template[schema]}"
+        -l outer_module="${template[module]}",target_schema="${template[schema]}" \
+        -p "${template[module]}" \
     # Post-processing: Check if the output is a valid XML file
     if xmllint --noout "${template[output]}" 2>/dev/null; then
         echo "🟩 Validation passed: ${template[output]} is a valid XML file."
